@@ -2,12 +2,11 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import pdfplumber
-import uuid
 import io
+import uuid
 
 app = FastAPI()
 
-# ---------------- CORS ----------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,75 +15,131 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- UTILITIES ----------------
+# --------------------------------------------------
+# SAFE FILE READERS
+# --------------------------------------------------
 
 def read_excel(file_bytes):
     return pd.read_excel(io.BytesIO(file_bytes))
 
 def read_pdf_table(file_bytes):
+    tables = []
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-        tables = []
         for page in pdf.pages:
-            tables += page.extract_tables()
-    return tables
+            table = page.extract_table()
+            if table:
+                df = pd.DataFrame(table[1:], columns=table[0])
+                tables.append(df)
+    if tables:
+        return pd.concat(tables, ignore_index=True)
+    return pd.DataFrame()
 
-def safe_number(val):
+# --------------------------------------------------
+# VALIDATION LAYER
+# --------------------------------------------------
+
+def validate_numeric(value):
     try:
-        return float(str(val).replace(",", "").strip())
+        return float(str(value).replace(",", "").strip())
     except:
         return 0
 
-# ---------------- CORE PARSER ----------------
+# --------------------------------------------------
+# FINANCIAL RATIO ENGINE
+# --------------------------------------------------
 
-def parse_pl(df):
-    data = {}
-    for col in df.columns:
-        lower = col.lower()
-        if "sales" in lower or "turnover" in lower:
-            data["sales"] = safe_number(df[col].iloc[-1])
-        if "profit" in lower:
-            data["profit"] = safe_number(df[col].iloc[-1])
-        if "depreciation" in lower:
-            data["depreciation"] = safe_number(df[col].iloc[-1])
-    return data
+def ratio_engine(pl_df, bs_df):
 
-def parse_bs(df):
-    data = {}
-    for col in df.columns:
-        lower = col.lower()
-        if "inventory" in lower or "stock" in lower:
-            data["inventory"] = safe_number(df[col].iloc[-1])
-        if "debtor" in lower:
-            data["debtors"] = safe_number(df[col].iloc[-1])
-        if "creditor" in lower:
-            data["creditors"] = safe_number(df[col].iloc[-1])
-    return data
+    revenue = validate_numeric(pl_df.iloc[:, -1].sum())
+    expenses = validate_numeric(pl_df.iloc[:, -2].sum())
 
-def parse_bank_pdf(file_bytes):
-    tables = read_pdf_table(file_bytes)
-    credits = 0
-    for table in tables:
-        for row in table:
-            for cell in row:
-                if cell and "cr" in str(cell).lower():
-                    try:
-                        val = safe_number(cell)
-                        credits += val
-                    except:
-                        pass
-    return credits
+    profit = revenue - expenses
 
-# ---------------- RISK ENGINE ----------------
+    total_assets = validate_numeric(bs_df.iloc[:, -1].sum())
+    total_liabilities = validate_numeric(bs_df.iloc[:, -2].sum())
 
-def risk_score(current_ratio, mismatch):
-    score = 80
-    if current_ratio < 1:
-        score -= 20
-    if mismatch > 20:
-        score -= 25
-    return max(score, 30)
+    current_ratio = (
+        total_assets / total_liabilities
+        if total_liabilities != 0 else 0
+    )
 
-# ---------------- MAIN ENDPOINT ----------------
+    profit_margin = (
+        (profit / revenue) * 100
+        if revenue != 0 else 0
+    )
+
+    return profit_margin, current_ratio, profit
+
+# --------------------------------------------------
+# BANK ANALYSIS
+# --------------------------------------------------
+
+def bank_engine(bank_df):
+
+    if bank_df.empty:
+        return 0
+
+    amounts = []
+
+    for col in bank_df.columns:
+        try:
+            numeric = pd.to_numeric(bank_df[col], errors='coerce')
+            amounts.append(numeric.sum())
+        except:
+            continue
+
+    turnover = max(amounts) if amounts else 0
+    return turnover
+
+# --------------------------------------------------
+# WORKING CAPITAL ENGINE
+# --------------------------------------------------
+
+def working_capital_engine(turnover):
+    return turnover * 0.20
+
+# --------------------------------------------------
+# AGRICULTURE ENGINE
+# --------------------------------------------------
+
+def agriculture_engine(profit):
+    monthly_surplus = (profit * 0.6) / 12
+    limit = monthly_surplus / 0.14 if monthly_surplus > 0 else 0
+    return limit
+
+# --------------------------------------------------
+# FRAUD ENGINE
+# --------------------------------------------------
+
+def fraud_engine(mismatch, current_ratio):
+    flags = []
+
+    if mismatch > 30:
+        flags.append("High turnover mismatch detected")
+
+    if current_ratio < 0.8:
+        flags.append("Liquidity stress observed")
+
+    if not flags:
+        flags.append("No major red flags")
+
+    return flags
+
+# --------------------------------------------------
+# AI EXPLANATION
+# --------------------------------------------------
+
+def ai_explanation(risk, decision):
+    if risk >= 75:
+        return "Strong financial profile with stable performance."
+    elif risk >= 50:
+        return "Moderate financial stability with manageable risk."
+    else:
+        return "High financial risk observed. Careful review recommended."
+
+# --------------------------------------------------
+# MAIN ANALYSIS ROUTE
+# --------------------------------------------------
 
 @app.post("/analyze")
 async def analyze(
@@ -95,44 +150,53 @@ async def analyze(
 
     case_id = str(uuid.uuid4())[:8]
 
-    # Read Files
     bs_bytes = await bs_file.read()
     pl_bytes = await pl_file.read()
     bank_bytes = await bank_file.read()
 
+    # Detect file type
     bs_df = read_excel(bs_bytes)
     pl_df = read_excel(pl_bytes)
 
-    bs_data = parse_bs(bs_df)
-    pl_data = parse_pl(pl_df)
-    bank_turnover = parse_bank_pdf(bank_bytes)
+    if bank_file.filename.endswith(".pdf"):
+        bank_df = read_pdf_table(bank_bytes)
+    else:
+        bank_df = read_excel(bank_bytes)
 
-    sales = pl_data.get("sales", 0)
-    profit = pl_data.get("profit", 0)
-    depreciation = pl_data.get("depreciation", 0)
-    inventory = bs_data.get("inventory", 0)
-    debtors = bs_data.get("debtors", 0)
-    creditors = bs_data.get("creditors", 0)
+    profit_margin, current_ratio, profit = ratio_engine(pl_df, bs_df)
 
-    # Calculations
-    working_capital_limit = sales * 0.20
-    current_ratio = (inventory + debtors) / creditors if creditors else 0
-    profit_margin = (profit / sales * 100) if sales else 0
-    mismatch = abs(bank_turnover - sales) / sales * 100 if sales else 0
+    turnover = bank_engine(bank_df)
 
-    risk = risk_score(current_ratio, mismatch)
-    decision = "Approve" if risk >= 60 else "Review"
+    wc_limit = working_capital_engine(turnover)
+    agri_limit = agriculture_engine(profit)
 
-    parsing_confidence = 90 if sales and inventory else 65
+    mismatch = abs(turnover - pl_df.iloc[:, -1].sum()) / (pl_df.iloc[:, -1].sum() + 1) * 100
+
+    risk_score = (
+        (profit_margin * 0.4) +
+        (current_ratio * 20 * 0.3) +
+        ((100 - mismatch) * 0.3)
+    )
+
+    decision = "Approve" if risk_score >= 60 else "Review"
+
+    fraud_flags = fraud_engine(mismatch, current_ratio)
+
+    confidence = 85 if not bank_df.empty else 60
+
+    explanation = ai_explanation(risk_score, decision)
 
     return {
         "Case_ID": case_id,
-        "Bank_Turnover": round(bank_turnover,2),
-        "Working_Capital_Limit": round(working_capital_limit,2),
-        "Current_Ratio": round(current_ratio,2),
-        "Profit_Margin": round(profit_margin,2),
-        "Mismatch_%": round(mismatch,2),
-        "Risk_Score": risk,
+        "Profit_Margin": round(profit_margin, 2),
+        "Current_Ratio": round(current_ratio, 2),
+        "Bank_Turnover": round(turnover, 2),
+        "Working_Capital_Limit": round(wc_limit, 2),
+        "Agri_Limit": round(agri_limit, 2),
+        "Mismatch_%": round(mismatch, 2),
+        "Risk_Score": round(risk_score, 2),
         "Decision": decision,
-        "Parsing_Confidence": parsing_confidence
+        "Fraud_Flags": fraud_flags,
+        "Parsing_Confidence": confidence,
+        "AI_Explanation": explanation
     }
