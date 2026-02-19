@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -13,8 +13,9 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
-app = FastAPI(title="Credit Underwriting AI Engine")
+app = FastAPI(title="Enterprise Underwriting Engine")
 
+# ---------------- CORS ----------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,7 +40,7 @@ CREATE TABLE IF NOT EXISTS cases (
 """)
 conn.commit()
 
-# ---------------- MODEL ----------------
+# ---------------- FINANCIAL MODEL ----------------
 class FinancialInput(BaseModel):
     sales: float
     pat: float
@@ -52,26 +53,26 @@ class FinancialInput(BaseModel):
     undocumented: float
     bounce: int
 
-# ---------------- CORE ENGINE ----------------
+# ---------------- CORE CALCULATION ----------------
 def calculate_models(data):
 
-    # Agriculture Model
+    # AGRICULTURE
     nca = data.pat + data.dep
     scale = 0.7 if data.loan_req > 3000000 else 0.6
     surplus = (nca * scale / 12) - data.emi + (data.undocumented * 0.42 / 12)
     agri_limit = max(0, surplus / 0.14)
 
-    # Working Capital Model
+    # WORKING CAPITAL
     wc_gap = (data.stock + data.debtors) - data.creditors
     turnover_limit = data.sales * 0.20
     mpbf_limit = max(0, wc_gap * 0.75)
     wc_limit = min(turnover_limit, mpbf_limit)
 
-    # Ratios
+    # RATIOS
     margin = (data.pat / data.sales) * 100 if data.sales else 0
     current_ratio = (data.stock + data.debtors) / data.creditors if data.creditors else 0
 
-    # Risk Score
+    # RISK SCORE
     score = 0
     score += 20 if margin > 10 else 15 if margin > 5 else 8
     score += 20 if current_ratio >= 1.5 else 15 if current_ratio >= 1.2 else 8
@@ -79,6 +80,7 @@ def calculate_models(data):
 
     decision = "Approve" if score >= 60 else "Review"
 
+    # RISK GRADE
     if score >= 80:
         grade = "A (Low Risk)"
     elif score >= 65:
@@ -88,6 +90,7 @@ def calculate_models(data):
     else:
         grade = "D (High Risk)"
 
+    # BANKING HEALTH
     banking_health = "Stable"
     if data.bounce > 3:
         banking_health = "Irregular"
@@ -96,9 +99,84 @@ def calculate_models(data):
 
     return agri_limit, wc_limit, score, decision, margin, current_ratio, wc_gap, banking_health, grade
 
-# ---------------- ANALYZE ----------------
-@app.post("/analyze")
-def analyze(data: FinancialInput):
+# ---------------- FULL ANALYSIS (3 FILES) ----------------
+@app.post("/full-analysis")
+async def full_analysis(
+    bs_file: UploadFile = File(...),
+    pl_file: UploadFile = File(...),
+    bank_file: UploadFile = File(...)
+):
+
+    async def extract_text(file):
+        text = ""
+        filename = file.filename.lower()
+
+        if filename.endswith((".xlsx",".xls")):
+            df = pd.read_excel(io.BytesIO(await file.read()))
+            text = df.to_string().lower()
+
+        elif filename.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(await file.read()))
+            text = df.to_string().lower()
+
+        elif filename.endswith(".pdf"):
+            with pdfplumber.open(io.BytesIO(await file.read())) as pdf:
+                for page in pdf.pages:
+                    text += page.extract_text() or ""
+            text = text.lower()
+
+        return text
+
+    bs_text = await extract_text(bs_file)
+    pl_text = await extract_text(pl_file)
+    bank_text = await extract_text(bank_file)
+
+    def find_value(text, keyword):
+        match = re.search(keyword + r".{0,40}?(\d[\d,]*\.?\d*)", text)
+        return float(match.group(1).replace(",", "")) if match else 0
+
+    # EXTRACT DATA
+    sales = find_value(pl_text, "sales|turnover|revenue")
+    pat = find_value(pl_text, "net profit|pat")
+    dep = find_value(pl_text, "depreciation")
+    stock = find_value(bs_text, "inventory|stock")
+    debtors = find_value(bs_text, "debtors")
+    creditors = find_value(bs_text, "creditors")
+
+    bounce = len(re.findall(r"return|bounce|insufficient", bank_text))
+    bank_numbers = re.findall(r"\d[\d,]*\.?\d*", bank_text)
+    bank_turnover = sum(float(n.replace(",", "")) for n in bank_numbers)
+
+    # MISMATCH %
+    mismatch = abs(bank_turnover - sales) / sales * 100 if sales else 0
+
+    # ACCURACY SCORE
+    accuracy = 100
+    if mismatch > 20: accuracy -= 20
+    if bounce > 3: accuracy -= 15
+    if creditors > (stock + debtors): accuracy -= 15
+
+    # FRAUD FLAGS
+    fraud_flags = []
+    if mismatch > 30:
+        fraud_flags.append("High Turnover Mismatch")
+    if bounce > 5:
+        fraud_flags.append("Excessive Cheque Bounces")
+    if creditors > (stock + debtors):
+        fraud_flags.append("Negative Working Capital")
+
+    data = FinancialInput(
+        sales=sales,
+        pat=pat,
+        dep=dep,
+        stock=stock,
+        debtors=debtors,
+        creditors=creditors,
+        loan_req=0,
+        emi=0,
+        undocumented=0,
+        bounce=bounce
+    )
 
     agri_limit, wc_limit, score, decision, margin, cr, wc_gap, bank_health, grade = calculate_models(data)
 
@@ -113,15 +191,28 @@ def analyze(data: FinancialInput):
 
     return {
         "Case_ID": case_id,
-        "Agri_Eligible_Limit": round(agri_limit, 2),
-        "Working_Capital_Limit": round(wc_limit, 2),
-        "Risk_Score": score,
-        "Decision": decision,
-        "Profit_Margin": round(margin, 2),
-        "Current_Ratio": round(cr, 2),
-        "Working_Capital_Gap": round(wc_gap, 2),
-        "Banking_Health": bank_health,
-        "Risk_Grade": grade
+        "Parsed_Data": {
+            "Sales": sales,
+            "PAT": pat,
+            "Stock": stock,
+            "Debtors": debtors,
+            "Creditors": creditors,
+            "Bank_Turnover": bank_turnover,
+            "Bounce_Count": bounce
+        },
+        "Mismatch_%": round(mismatch,2),
+        "Accuracy_Score": accuracy,
+        "Fraud_Flags": fraud_flags,
+        "Eligibility": {
+            "Agri_Limit": round(agri_limit,2),
+            "Working_Capital_Limit": round(wc_limit,2)
+        },
+        "Risk": {
+            "Score": score,
+            "Grade": grade,
+            "Decision": decision,
+            "Banking_Health": bank_health
+        }
     }
 
 # ---------------- CASE HISTORY ----------------
@@ -138,50 +229,35 @@ def get_cases():
         "Created_At": r[5]
     } for r in rows]
 
-# ---------------- DOCUMENT PARSER ----------------
-@app.post("/parse-document")
-async def parse_document(doc_type: str = Form(...), file: UploadFile = File(...)):
+# ---------------- CAM GENERATOR ----------------
+@app.get("/generate-cam/{case_id}")
+def generate_cam(case_id: str):
 
-    text = ""
-    filename = file.filename.lower()
+    cursor.execute("SELECT * FROM cases WHERE id=?", (case_id,))
+    row = cursor.fetchone()
 
-    if filename.endswith((".xlsx", ".xls")):
-        df = pd.read_excel(io.BytesIO(await file.read()))
-        text = df.to_string().lower()
+    if not row:
+        return {"error": "Case not found"}
 
-    elif filename.endswith(".csv"):
-        df = pd.read_csv(io.BytesIO(await file.read()))
-        text = df.to_string().lower()
+    filename = f"CAM_{case_id}.pdf"
+    doc = SimpleDocTemplate(filename)
+    elements = []
+    styles = getSampleStyleSheet()
 
-    elif filename.endswith(".pdf"):
-        with pdfplumber.open(io.BytesIO(await file.read())) as pdf:
-            for page in pdf.pages:
-                text += page.extract_text() or ""
-        text = text.lower()
+    elements.append(Paragraph("<b>CREDIT APPRAISAL MEMORANDUM</b>", styles["Title"]))
+    elements.append(Spacer(1, 0.5 * inch))
 
-    else:
-        return {"error": "Unsupported format"}
+    data = [
+        ["Case ID", row[0]],
+        ["Agriculture Limit", f"{row[1]:,.2f}"],
+        ["Working Capital Limit", f"{row[2]:,.2f}"],
+        ["Risk Score", row[3]],
+        ["Decision", row[4]],
+        ["Date", row[5]]
+    ]
 
-    def extract(keyword):
-        match = re.search(keyword + r".{0,40}?(\d[\d,]*\.?\d*)", text)
-        return float(match.group(1).replace(",", "")) if match else 0
+    table = Table(data)
+    elements.append(table)
+    doc.build(elements)
 
-    if doc_type == "pl":
-        return {
-            "Sales": extract("sales|turnover|revenue"),
-            "Net_Profit": extract("net profit|pat"),
-            "Depreciation": extract("depreciation")
-        }
-
-    if doc_type == "bs":
-        return {
-            "Inventory": extract("inventory|stock"),
-            "Debtors": extract("debtors"),
-            "Creditors": extract("creditors")
-        }
-
-    if doc_type == "bank":
-        bounce = len(re.findall(r"return|bounce|insufficient", text))
-        return {"Bounce_Count": bounce}
-
-    return {"error": "Invalid type"}
+    return FileResponse(filename, media_type="application/pdf", filename=filename)
