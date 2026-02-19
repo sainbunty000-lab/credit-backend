@@ -176,3 +176,63 @@ def get_cases():
         })
 
     return cases
+from fastapi.responses import FileResponse
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+import os
+
+@app.get("/generate-cam/{case_id}")
+def generate_cam(case_id: str):
+
+    cursor.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
+    row = cursor.fetchone()
+
+    if not row:
+        return {"error": "Case not found"}
+
+    file_name = f"CAM_{case_id}.pdf"
+    doc = SimpleDocTemplate(file_name)
+    elements = []
+
+    styles = getSampleStyleSheet()
+
+    elements.append(Paragraph("<b>CREDIT APPRAISAL MEMORANDUM</b>", styles["Title"]))
+    elements.append(Spacer(1, 0.5 * inch))
+
+    data = [
+        ["Case ID", row[0]],
+        ["Date", row[7]],
+        ["Annual Sales", f"{row[1]:,.2f}"],
+        ["Net Profit (PAT)", f"{row[2]:,.2f}"],
+        ["Depreciation", f"{row[3]:,.2f}"],
+        ["Final Eligible Limit", f"{row[4]:,.2f}"],
+        ["Risk Score", row[5]],
+        ["Decision Recommendation", row[6]],
+    ]
+
+    table = Table(data, colWidths=[200, 250])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 1, colors.grey),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+    ]))
+
+    elements.append(table)
+
+    elements.append(Spacer(1, 0.5 * inch))
+
+    elements.append(Paragraph(
+        "Analysis Summary: Based on financial inputs, turnover model, "
+        "MPBF calculation and income stress test, the above limit is recommended.",
+        styles["Normal"]
+    ))
+
+    doc.build(elements)
+
+    return FileResponse(
+        path=file_name,
+        filename=file_name,
+        media_type='application/pdf'
+    )
