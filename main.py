@@ -1,13 +1,11 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
 import pandas as pd
 import pdfplumber
-import io
-import re
 import uuid
+import io
 
-app = FastAPI(title="Enterprise Underwriting Engine")
+app = FastAPI()
 
 # ---------------- CORS ----------------
 app.add_middleware(
@@ -18,202 +16,123 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- SAFE BANK PARSER ----------------
-def parse_bank(file_bytes, filename):
+# ---------------- UTILITIES ----------------
 
-    credit_total = 0
-    bounce_count = 0
-    confidence = 0
+def read_excel(file_bytes):
+    return pd.read_excel(io.BytesIO(file_bytes))
 
+def read_pdf_table(file_bytes):
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        tables = []
+        for page in pdf.pages:
+            tables += page.extract_tables()
+    return tables
+
+def safe_number(val):
     try:
-
-        # ---------- EXCEL ----------
-        if filename.lower().endswith((".xlsx", ".xls")):
-            df = pd.read_excel(io.BytesIO(file_bytes))
-            headers = [str(h).lower() for h in df.columns]
-
-            credit_col = None
-            balance_col = None
-
-            for i, col in enumerate(headers):
-                if "credit" in col or "deposit" in col:
-                    credit_col = df.columns[i]
-                if "balance" in col:
-                    balance_col = df.columns[i]
-
-            if credit_col is None:
-                return {"error": "Credit column not detected", "confidence": 0}
-
-            confidence += 40
-
-            credit_total = pd.to_numeric(df[credit_col], errors="coerce").fillna(0).sum()
-            confidence += 40
-
-        # ---------- PDF ----------
-        elif filename.lower().endswith(".pdf"):
-
-            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                for page in pdf.pages:
-                    tables = page.extract_tables()
-                    for table in tables:
-                        headers = [str(h).lower() for h in table[0]]
-
-                        credit_index = None
-
-                        for i, col in enumerate(headers):
-                            if "credit" in col or "deposit" in col:
-                                credit_index = i
-
-                        if credit_index is not None:
-                            confidence += 40
-
-                            for row in table[1:]:
-                                try:
-                                    val = float(str(row[credit_index]).replace(",", ""))
-                                    if val > 0:
-                                        credit_total += val
-                                except:
-                                    pass
-
-            if credit_total > 0:
-                confidence += 40
-
-        # ---------- Bounce Detection ----------
-        text = file_bytes.decode(errors="ignore").lower()
-        bounce_count = len(re.findall(r"return|bounce|insufficient", text))
-        confidence += 20
-
-        return {
-            "credit_total": float(credit_total),
-            "bounce_count": bounce_count,
-            "confidence": min(confidence, 100)
-        }
-
-    except Exception as e:
-        return {"error": str(e), "confidence": 0}
-
-
-# ---------------- SAFE PL PARSER ----------------
-def parse_pl(file_bytes):
-    try:
-        df = pd.read_excel(io.BytesIO(file_bytes))
-        df = df.fillna(0)
-
-        numeric_df = df.select_dtypes(include="number")
-
-        sales = numeric_df.sum().sum()
-        pat = numeric_df.iloc[:, -1].sum()
-
-        return float(sales), float(pat)
-
+        return float(str(val).replace(",", "").strip())
     except:
-        return 0.0, 0.0
+        return 0
 
+# ---------------- CORE PARSER ----------------
 
-# ---------------- SAFE BS PARSER ----------------
-def parse_bs(file_bytes):
-    try:
-        df = pd.read_excel(io.BytesIO(file_bytes))
-        df = df.fillna(0)
+def parse_pl(df):
+    data = {}
+    for col in df.columns:
+        lower = col.lower()
+        if "sales" in lower or "turnover" in lower:
+            data["sales"] = safe_number(df[col].iloc[-1])
+        if "profit" in lower:
+            data["profit"] = safe_number(df[col].iloc[-1])
+        if "depreciation" in lower:
+            data["depreciation"] = safe_number(df[col].iloc[-1])
+    return data
 
-        numeric_df = df.select_dtypes(include="number")
+def parse_bs(df):
+    data = {}
+    for col in df.columns:
+        lower = col.lower()
+        if "inventory" in lower or "stock" in lower:
+            data["inventory"] = safe_number(df[col].iloc[-1])
+        if "debtor" in lower:
+            data["debtors"] = safe_number(df[col].iloc[-1])
+        if "creditor" in lower:
+            data["creditors"] = safe_number(df[col].iloc[-1])
+    return data
 
-        total_assets = numeric_df.sum().sum()
-        stock = numeric_df.iloc[:, 0].sum() if numeric_df.shape[1] > 0 else 0
-        debtors = numeric_df.iloc[:, 1].sum() if numeric_df.shape[1] > 1 else 0
-        creditors = numeric_df.iloc[:, 2].sum() if numeric_df.shape[1] > 2 else 0
+def parse_bank_pdf(file_bytes):
+    tables = read_pdf_table(file_bytes)
+    credits = 0
+    for table in tables:
+        for row in table:
+            for cell in row:
+                if cell and "cr" in str(cell).lower():
+                    try:
+                        val = safe_number(cell)
+                        credits += val
+                    except:
+                        pass
+    return credits
 
-        return float(stock), float(debtors), float(creditors)
+# ---------------- RISK ENGINE ----------------
 
-    except:
-        return 0.0, 0.0, 0.0
+def risk_score(current_ratio, mismatch):
+    score = 80
+    if current_ratio < 1:
+        score -= 20
+    if mismatch > 20:
+        score -= 25
+    return max(score, 30)
 
+# ---------------- MAIN ENDPOINT ----------------
 
-# ---------------- ELIGIBILITY CALCULATION ----------------
-def calculate_wc(sales, stock, debtors, creditors):
-
-    wc_gap = (stock + debtors) - creditors
-    wc_limit = min(sales * 0.20, max(0, wc_gap * 0.75))
-
-    return wc_limit
-
-
-def calculate_risk(pat, sales, bounce, stock, debtors, creditors):
-
-    score = 0
-
-    margin = (pat / sales) * 100 if sales else 0
-    current_ratio = (stock + debtors) / creditors if creditors else 0
-
-    if margin > 10:
-        score += 30
-    elif margin > 5:
-        score += 20
-    else:
-        score += 10
-
-    if current_ratio >= 1.5:
-        score += 30
-    elif current_ratio >= 1.2:
-        score += 20
-    else:
-        score += 10
-
-    if bounce == 0:
-        score += 30
-    elif bounce <= 2:
-        score += 20
-    else:
-        score += 10
-
-    decision = "Approve" if score >= 60 else "Review"
-
-    return score, decision, margin, current_ratio
-
-
-# ---------------- FULL ANALYSIS ----------------
-@app.post("/full-analysis")
-async def full_analysis(
+@app.post("/analyze")
+async def analyze(
     bs_file: UploadFile = File(...),
     pl_file: UploadFile = File(...),
     bank_file: UploadFile = File(...)
 ):
 
-    try:
+    case_id = str(uuid.uuid4())[:8]
 
-        bank_bytes = await bank_file.read()
-        pl_bytes = await pl_file.read()
-        bs_bytes = await bs_file.read()
+    # Read Files
+    bs_bytes = await bs_file.read()
+    pl_bytes = await pl_file.read()
+    bank_bytes = await bank_file.read()
 
-        bank_data = parse_bank(bank_bytes, bank_file.filename)
+    bs_df = read_excel(bs_bytes)
+    pl_df = read_excel(pl_bytes)
 
-        if bank_data.get("error"):
-            return bank_data
+    bs_data = parse_bs(bs_df)
+    pl_data = parse_pl(pl_df)
+    bank_turnover = parse_bank_pdf(bank_bytes)
 
-        sales, pat = parse_pl(pl_bytes)
-        stock, debtors, creditors = parse_bs(bs_bytes)
+    sales = pl_data.get("sales", 0)
+    profit = pl_data.get("profit", 0)
+    depreciation = pl_data.get("depreciation", 0)
+    inventory = bs_data.get("inventory", 0)
+    debtors = bs_data.get("debtors", 0)
+    creditors = bs_data.get("creditors", 0)
 
-        wc_limit = calculate_wc(sales, stock, debtors, creditors)
+    # Calculations
+    working_capital_limit = sales * 0.20
+    current_ratio = (inventory + debtors) / creditors if creditors else 0
+    profit_margin = (profit / sales * 100) if sales else 0
+    mismatch = abs(bank_turnover - sales) / sales * 100 if sales else 0
 
-        score, decision, margin, current_ratio = calculate_risk(
-            pat, sales,
-            bank_data["bounce_count"],
-            stock, debtors, creditors
-        )
+    risk = risk_score(current_ratio, mismatch)
+    decision = "Approve" if risk >= 60 else "Review"
 
-        mismatch = abs(bank_data["credit_total"] - sales) / sales * 100 if sales else 0
+    parsing_confidence = 90 if sales and inventory else 65
 
-        return {
-            "Case_ID": str(uuid.uuid4()),
-            "Bank_Turnover": bank_data["credit_total"],
-            "Parsing_Confidence": bank_data["confidence"],
-            "Mismatch_%": round(mismatch,2),
-            "Working_Capital_Limit": round(wc_limit,2),
-            "Risk_Score": score,
-            "Decision": decision,
-            "Profit_Margin": round(margin,2),
-            "Current_Ratio": round(current_ratio,2)
-        }
-
-    except Exception as e:
-        return {"error": str(e)}
+    return {
+        "Case_ID": case_id,
+        "Bank_Turnover": round(bank_turnover,2),
+        "Working_Capital_Limit": round(working_capital_limit,2),
+        "Current_Ratio": round(current_ratio,2),
+        "Profit_Margin": round(profit_margin,2),
+        "Mismatch_%": round(mismatch,2),
+        "Risk_Score": risk,
+        "Decision": decision,
+        "Parsing_Confidence": parsing_confidence
+    }
