@@ -12,9 +12,8 @@ import re
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.lib import colors
 
-app = FastAPI(title="Credit Underwriting Suite")
+app = FastAPI(title="Credit Underwriting AI Engine")
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,10 +30,8 @@ cursor = conn.cursor()
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS cases (
     id TEXT PRIMARY KEY,
-    sales REAL,
-    pat REAL,
-    dep REAL,
-    final_limit REAL,
+    agri_limit REAL,
+    wc_limit REAL,
     risk_score INTEGER,
     decision TEXT,
     created_at TEXT
@@ -42,7 +39,7 @@ CREATE TABLE IF NOT EXISTS cases (
 """)
 conn.commit()
 
-# ---------------- INPUT MODEL ----------------
+# ---------------- MODEL ----------------
 class FinancialInput(BaseModel):
     sales: float
     pat: float
@@ -58,23 +55,23 @@ class FinancialInput(BaseModel):
 # ---------------- CORE ENGINE ----------------
 def calculate_models(data):
 
-    # ---------------- AGRICULTURE MODEL ----------------
+    # Agriculture Model
     nca = data.pat + data.dep
     scale = 0.7 if data.loan_req > 3000000 else 0.6
     surplus = (nca * scale / 12) - data.emi + (data.undocumented * 0.42 / 12)
     agri_limit = max(0, surplus / 0.14)
 
-    # ---------------- WORKING CAPITAL MODEL ----------------
+    # Working Capital Model
     wc_gap = (data.stock + data.debtors) - data.creditors
     turnover_limit = data.sales * 0.20
     mpbf_limit = max(0, wc_gap * 0.75)
     wc_limit = min(turnover_limit, mpbf_limit)
 
-    # ---------------- RATIOS ----------------
+    # Ratios
     margin = (data.pat / data.sales) * 100 if data.sales else 0
     current_ratio = (data.stock + data.debtors) / data.creditors if data.creditors else 0
 
-    # ---------------- RISK SCORE ----------------
+    # Risk Score
     score = 0
     score += 20 if margin > 10 else 15 if margin > 5 else 8
     score += 20 if current_ratio >= 1.5 else 15 if current_ratio >= 1.2 else 8
@@ -97,62 +94,27 @@ def calculate_models(data):
     elif data.bounce > 0:
         banking_health = "Moderate"
 
-    return (
-        agri_limit,
-        wc_limit,
-        score,
-        decision,
-        margin,
-        current_ratio,
-        wc_gap,
-        banking_health,
-        grade
-    )
+    return agri_limit, wc_limit, score, decision, margin, current_ratio, wc_gap, banking_health, grade
 
 # ---------------- ANALYZE ----------------
 @app.post("/analyze")
 def analyze(data: FinancialInput):
 
-    final, score, decision, margin, cr, wc_gap, bank_health, grade = calculate_models(data)
+    agri_limit, wc_limit, score, decision, margin, cr, wc_gap, bank_health, grade = calculate_models(data)
 
     case_id = str(uuid.uuid4())
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    cursor.execute("""
-    INSERT INTO cases VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (case_id, data.sales, data.pat, data.dep,
-          final, score, decision, created_at))
-    conn.commit()
-
-    return {
-           (
-        agri_limit,
-        wc_limit,
-        score,
-        decision,
-        margin,
-        cr,
-        wc_gap,
-        bank_health,
-        grade
-    ) = calculate_models(data)
-
-    case_id = str(uuid.uuid4())
-    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    cursor.execute("""
-    INSERT INTO cases VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (case_id, data.sales, data.pat, data.dep,
-          wc_limit, score, decision, created_at))
+    cursor.execute(
+        "INSERT INTO cases VALUES (?, ?, ?, ?, ?, ?)",
+        (case_id, agri_limit, wc_limit, score, decision, created_at)
+    )
     conn.commit()
 
     return {
         "Case_ID": case_id,
-
-        # Two Separate Limits
         "Agri_Eligible_Limit": round(agri_limit, 2),
         "Working_Capital_Limit": round(wc_limit, 2),
-
         "Risk_Score": score,
         "Decision": decision,
         "Profit_Margin": round(margin, 2),
@@ -169,18 +131,19 @@ def get_cases():
     rows = cursor.fetchall()
     return [{
         "Case_ID": r[0],
-        "Final_Limit": r[4],
-        "Risk_Score": r[5],
-        "Decision": r[6],
-        "Created_At": r[7]
+        "Agri_Limit": r[1],
+        "WC_Limit": r[2],
+        "Risk_Score": r[3],
+        "Decision": r[4],
+        "Created_At": r[5]
     } for r in rows]
 
 # ---------------- DOCUMENT PARSER ----------------
 @app.post("/parse-document")
 async def parse_document(doc_type: str = Form(...), file: UploadFile = File(...)):
 
-    filename = file.filename.lower()
     text = ""
+    filename = file.filename.lower()
 
     if filename.endswith((".xlsx", ".xls")):
         df = pd.read_excel(io.BytesIO(await file.read()))
@@ -200,15 +163,14 @@ async def parse_document(doc_type: str = Form(...), file: UploadFile = File(...)
         return {"error": "Unsupported format"}
 
     def extract(keyword):
-        match = re.search(keyword + r".{0,30}?(\d[\d,]*\.?\d*)", text)
+        match = re.search(keyword + r".{0,40}?(\d[\d,]*\.?\d*)", text)
         return float(match.group(1).replace(",", "")) if match else 0
 
     if doc_type == "pl":
         return {
             "Sales": extract("sales|turnover|revenue"),
             "Net_Profit": extract("net profit|pat"),
-            "Depreciation": extract("depreciation"),
-            "Tax": extract("tax")
+            "Depreciation": extract("depreciation")
         }
 
     if doc_type == "bs":
@@ -220,11 +182,6 @@ async def parse_document(doc_type: str = Form(...), file: UploadFile = File(...)
 
     if doc_type == "bank":
         bounce = len(re.findall(r"return|bounce|insufficient", text))
-        numbers = re.findall(r"\d[\d,]*\.?\d*", text)
-        total = sum(float(n.replace(",", "")) for n in numbers)
-        return {
-            "Total_Credits": total,
-            "Bounce_Count": bounce
-        }
+        return {"Bounce_Count": bounce}
 
     return {"error": "Invalid type"}
