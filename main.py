@@ -4,10 +4,11 @@ import pandas as pd
 import pdfplumber
 import io
 import uuid
+import traceback
 
-app = FastAPI(title="Ultra Stable Underwriting Engine")
+app = FastAPI(title="Enterprise Underwriting Engine")
 
-# ------------------ CORS ------------------
+# ---------------- CORS ----------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,7 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ------------------ SAFE UTILITIES ------------------
+# ---------------- SAFE HELPERS ----------------
 
 def safe_float(value):
     try:
@@ -36,7 +37,7 @@ def read_pdf_safe(file_bytes):
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             for page in pdf.pages:
                 table = page.extract_table()
-                if table:
+                if table and len(table) > 1:
                     df = pd.DataFrame(table[1:], columns=table[0])
                     tables.append(df)
         if tables:
@@ -45,7 +46,7 @@ def read_pdf_safe(file_bytes):
     except:
         return pd.DataFrame()
 
-# ------------------ PL PARSER ------------------
+# ---------------- PARSERS ----------------
 
 def parse_pl(df):
     sales = 0
@@ -55,17 +56,15 @@ def parse_pl(df):
         return sales, profit
 
     for col in df.columns:
-        col_lower = str(col).lower()
+        col_name = str(col).lower()
 
-        if "sales" in col_lower or "turnover" in col_lower or "revenue" in col_lower:
-            sales = safe_float(df[col].sum())
+        if any(word in col_name for word in ["sales","turnover","revenue"]):
+            sales = safe_float(pd.to_numeric(df[col], errors="coerce").sum())
 
-        if "profit" in col_lower or "net" in col_lower:
-            profit = safe_float(df[col].sum())
+        if any(word in col_name for word in ["profit","net"]):
+            profit = safe_float(pd.to_numeric(df[col], errors="coerce").sum())
 
     return sales, profit
-
-# ------------------ BS PARSER ------------------
 
 def parse_bs(df):
     inventory = 0
@@ -76,44 +75,43 @@ def parse_bs(df):
         return inventory, debtors, creditors
 
     for col in df.columns:
-        col_lower = str(col).lower()
+        col_name = str(col).lower()
 
-        if "inventory" in col_lower or "stock" in col_lower:
-            inventory = safe_float(df[col].sum())
+        if any(word in col_name for word in ["inventory","stock"]):
+            inventory = safe_float(pd.to_numeric(df[col], errors="coerce").sum())
 
-        if "debtor" in col_lower:
-            debtors = safe_float(df[col].sum())
+        if "debtor" in col_name:
+            debtors = safe_float(pd.to_numeric(df[col], errors="coerce").sum())
 
-        if "creditor" in col_lower:
-            creditors = safe_float(df[col].sum())
+        if "creditor" in col_name:
+            creditors = safe_float(pd.to_numeric(df[col], errors="coerce").sum())
 
     return inventory, debtors, creditors
 
-# ------------------ BANK PARSER ------------------
-
 def parse_bank(df):
-    turnover = 0
-
     if df.empty:
-        return turnover
+        return 0
+
+    max_sum = 0
 
     for col in df.columns:
         try:
             numeric = pd.to_numeric(df[col], errors="coerce")
             col_sum = numeric.sum()
-            if col_sum > turnover:
-                turnover = col_sum
+            if col_sum > max_sum:
+                max_sum = col_sum
         except:
             continue
 
-    return safe_float(turnover)
+    return safe_float(max_sum)
 
-# ------------------ RISK ENGINE ------------------
+# ---------------- RISK ENGINE ----------------
 
-def calculate_risk(profit_margin, current_ratio, mismatch):
+def risk_engine(profit_margin, current_ratio, mismatch):
+
     score = 0
 
-    # Profit margin
+    # Profit strength
     if profit_margin > 15:
         score += 35
     elif profit_margin > 8:
@@ -124,12 +122,12 @@ def calculate_risk(profit_margin, current_ratio, mismatch):
     # Liquidity
     if current_ratio >= 1.5:
         score += 30
-    elif current_ratio >= 1.0:
+    elif current_ratio >= 1:
         score += 20
     else:
         score += 10
 
-    # Mismatch
+    # Turnover match
     if mismatch < 10:
         score += 35
     elif mismatch < 25:
@@ -139,7 +137,11 @@ def calculate_risk(profit_margin, current_ratio, mismatch):
 
     return score
 
-# ------------------ MAIN ROUTE ------------------
+# ---------------- MAIN ROUTE ----------------
+
+@app.get("/")
+def health():
+    return {"status": "Backend running"}
 
 @app.post("/analyze")
 async def analyze(
@@ -155,19 +157,20 @@ async def analyze(
         pl_bytes = await pl_file.read()
         bank_bytes = await bank_file.read()
 
-        # Detect formats
+        # Read BS
         bs_df = read_excel_safe(bs_bytes)
-        if bs_df.empty and bs_file.filename.endswith(".pdf"):
+        if bs_df.empty:
             bs_df = read_pdf_safe(bs_bytes)
 
+        # Read PL
         pl_df = read_excel_safe(pl_bytes)
-        if pl_df.empty and pl_file.filename.endswith(".pdf"):
+        if pl_df.empty:
             pl_df = read_pdf_safe(pl_bytes)
 
-        if bank_file.filename.endswith(".pdf"):
+        # Read Bank
+        bank_df = read_excel_safe(bank_bytes)
+        if bank_df.empty:
             bank_df = read_pdf_safe(bank_bytes)
-        else:
-            bank_df = read_excel_safe(bank_bytes)
 
         # Parse
         sales, profit = parse_pl(pl_df)
@@ -183,7 +186,7 @@ async def analyze(
         wc_limit = turnover * 0.20
         agri_limit = ((profit * 0.6) / 12) / 0.14 if profit > 0 else 0
 
-        risk_score = calculate_risk(profit_margin, current_ratio, mismatch)
+        risk_score = risk_engine(profit_margin, current_ratio, mismatch)
         decision = "Approve" if risk_score >= 60 else "Review"
 
         fraud_flags = []
@@ -197,9 +200,11 @@ async def analyze(
         confidence = 90 if not bank_df.empty else 60
 
         explanation = (
-            "Strong profile." if risk_score >= 75 else
-            "Moderate profile." if risk_score >= 60 else
-            "High risk profile."
+            "Strong financial profile."
+            if risk_score >= 75 else
+            "Moderate financial stability."
+            if risk_score >= 60 else
+            "High financial risk detected."
         )
 
         return {
@@ -218,7 +223,8 @@ async def analyze(
         }
 
     except Exception as e:
+        traceback.print_exc()
         return {
             "error": str(e),
-            "message": "Server handled error safely"
+            "message": "Safe error handled"
         }
