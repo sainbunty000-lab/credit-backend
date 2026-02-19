@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime
+import sqlite3
+import uuid
 
 app = FastAPI(title="Credit Underwriting API")
 
@@ -12,7 +15,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------- DATABASE SETUP ----------
+conn = sqlite3.connect("cases.db", check_same_thread=False)
+cursor = conn.cursor()
 
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS cases (
+    id TEXT PRIMARY KEY,
+    sales REAL,
+    pat REAL,
+    dep REAL,
+    final_limit REAL,
+    risk_score INTEGER,
+    decision TEXT,
+    created_at TEXT
+)
+""")
+conn.commit()
+
+
+# ---------- INPUT MODEL ----------
 class FinancialInput(BaseModel):
     sales: float
     pat: float
@@ -31,6 +53,7 @@ def home():
     return {"message": "Credit Underwriting API Running Successfully"}
 
 
+# ---------- CALCULATION ENGINE ----------
 def calculate_nca(pat, dep):
     return pat + dep
 
@@ -82,6 +105,7 @@ def risk_score(margin, current_ratio, bounce):
     return score
 
 
+# ---------- ANALYZE & SAVE ----------
 @app.post("/analyze")
 def analyze(data: FinancialInput):
 
@@ -105,12 +129,50 @@ def analyze(data: FinancialInput):
 
     decision = "Approve" if score >= 60 else "Review"
 
+    case_id = str(uuid.uuid4())
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    cursor.execute("""
+    INSERT INTO cases (id, sales, pat, dep, final_limit, risk_score, decision, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        case_id,
+        data.sales,
+        data.pat,
+        data.dep,
+        final,
+        score,
+        decision,
+        created_at
+    ))
+
+    conn.commit()
+
     return {
-        "NCA": data.pat + data.dep,
-        "Income_Model": round(income, 2),
-        "Turnover_Model": round(turnover, 2),
-        "MPBF": round(mpbf_val, 2),
+        "Case_ID": case_id,
         "Final_Limit": round(final, 2),
         "Risk_Score": score,
         "Decision": decision
     }
+
+
+# ---------- GET ALL CASES ----------
+@app.get("/cases")
+def get_cases():
+    cursor.execute("SELECT * FROM cases ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+
+    cases = []
+    for row in rows:
+        cases.append({
+            "Case_ID": row[0],
+            "Sales": row[1],
+            "PAT": row[2],
+            "Depreciation": row[3],
+            "Final_Limit": row[4],
+            "Risk_Score": row[5],
+            "Decision": row[6],
+            "Created_At": row[7]
+        })
+
+    return cases
