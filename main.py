@@ -13,7 +13,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
-app = FastAPI(title="Enterprise AI Underwriting Engine")
+app = FastAPI(title="Enterprise Structured Underwriting Engine")
 
 # ---------------- CORS ----------------
 app.add_middleware(
@@ -40,112 +40,129 @@ CREATE TABLE IF NOT EXISTS cases (
 """)
 conn.commit()
 
-# ---------------- FINANCIAL MODEL ----------------
+# ---------------- BANK PARSER ----------------
+def parse_bank_statement(file_bytes, filename):
+
+    confidence = 0
+    credit_total = 0
+    balances = []
+    bounce_count = 0
+
+    def detect_columns(headers):
+        credit_col = None
+        balance_col = None
+
+        for idx, col in enumerate(headers):
+            col_lower = str(col).lower()
+
+            if any(k in col_lower for k in ["credit", "deposit", "cr"]):
+                credit_col = idx
+
+            if "balance" in col_lower:
+                balance_col = idx
+
+        return credit_col, balance_col
+
+    # -------- EXCEL --------
+    if filename.endswith((".xlsx", ".xls")):
+        df = pd.read_excel(io.BytesIO(file_bytes))
+        headers = list(df.columns.astype(str))
+        credit_col, balance_col = detect_columns(headers)
+
+        if credit_col is None or balance_col is None:
+            return {"error": "Bank columns not detected", "confidence": 0}
+
+        confidence += 40
+
+        for _, row in df.iterrows():
+            try:
+                val = float(str(row[headers[credit_col]]).replace(",", ""))
+                if val > 0:
+                    credit_total += val
+            except:
+                pass
+
+            try:
+                bal = float(str(row[headers[balance_col]]).replace(",", ""))
+                balances.append(bal)
+            except:
+                pass
+
+        if credit_total > 0:
+            confidence += 30
+
+        if len(balances) > 10:
+            confidence += 20
+
+    # -------- PDF --------
+    elif filename.endswith(".pdf"):
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            for page in pdf.pages:
+                tables = page.extract_tables()
+                for table in tables:
+                    headers = table[0]
+                    credit_col, balance_col = detect_columns(headers)
+
+                    if credit_col is not None and balance_col is not None:
+                        confidence += 40
+
+                        for row in table[1:]:
+                            try:
+                                val = float(str(row[credit_col]).replace(",", ""))
+                                if val > 0:
+                                    credit_total += val
+                            except:
+                                pass
+
+                            try:
+                                bal = float(str(row[balance_col]).replace(",", ""))
+                                balances.append(bal)
+                            except:
+                                pass
+
+        if credit_total > 0:
+            confidence += 30
+
+        if len(balances) > 10:
+            confidence += 20
+
+    # Bounce Detection
+    text_sample = file_bytes.decode(errors="ignore").lower()
+    bounce_count = len(re.findall(r"return|bounce|insufficient", text_sample))
+    confidence += 10
+
+    return {
+        "credit_total": credit_total,
+        "balances": balances,
+        "bounce_count": bounce_count,
+        "confidence": min(confidence, 100)
+    }
+
+# ---------------- ELIGIBILITY MODEL ----------------
 class FinancialInput(BaseModel):
     sales: float
     pat: float
-    dep: float
     stock: float
     debtors: float
     creditors: float
-    loan_req: float
-    emi: float
-    undocumented: float
     bounce: int
 
-# ---------------- CORE CALCULATION ----------------
 def calculate_models(data):
 
-    # AGRICULTURE
-    nca = data.pat + data.dep
-    scale = 0.7 if data.loan_req > 3000000 else 0.6
-    surplus = (nca * scale / 12) - data.emi + (data.undocumented * 0.42 / 12)
-    agri_limit = max(0, surplus / 0.14)
-
-    # WORKING CAPITAL
     wc_gap = (data.stock + data.debtors) - data.creditors
-    turnover_limit = data.sales * 0.20
-    mpbf_limit = max(0, wc_gap * 0.75)
-    wc_limit = min(turnover_limit, mpbf_limit)
+    wc_limit = min(data.sales * 0.20, max(0, wc_gap * 0.75))
 
-    # RATIOS
     margin = (data.pat / data.sales) * 100 if data.sales else 0
     current_ratio = (data.stock + data.debtors) / data.creditors if data.creditors else 0
 
-    # RISK SCORE
     score = 0
-    score += 20 if margin > 10 else 15 if margin > 5 else 8
-    score += 20 if current_ratio >= 1.5 else 15 if current_ratio >= 1.2 else 8
-    score += 20 if data.bounce == 0 else 15 if data.bounce <= 2 else 5
+    score += 30 if margin > 10 else 20 if margin > 5 else 10
+    score += 30 if current_ratio >= 1.5 else 20 if current_ratio >= 1.2 else 10
+    score += 30 if data.bounce == 0 else 20 if data.bounce <= 2 else 5
 
     decision = "Approve" if score >= 60 else "Review"
 
-    # RISK GRADE
-    if score >= 80:
-        grade = "A (Low Risk)"
-    elif score >= 65:
-        grade = "B (Acceptable)"
-    elif score >= 50:
-        grade = "C (Moderate Risk)"
-    else:
-        grade = "D (High Risk)"
-
-    # BANKING HEALTH
-    banking_health = "Stable"
-    if data.bounce > 3:
-        banking_health = "Irregular"
-    elif data.bounce > 0:
-        banking_health = "Moderate"
-
-    return agri_limit, wc_limit, score, decision, margin, current_ratio, wc_gap, banking_health, grade
-
-# ---------------- AI EXPLANATION ENGINE ----------------
-def generate_ai_summary(parsed, mismatch, accuracy, fraud_flags, risk):
-
-    sales = parsed["Sales"]
-    pat = parsed["PAT"]
-    stock = parsed["Stock"]
-    debtors = parsed["Debtors"]
-    creditors = parsed["Creditors"]
-    bounce = parsed["Bounce_Count"]
-
-    margin = (pat / sales * 100) if sales else 0
-    current_ratio = (stock + debtors) / creditors if creditors else 0
-
-    executive = (
-        f"The applicant reports annual sales of ₹{sales:,.0f} "
-        f"with a profit margin of {margin:.2f}%. "
-        f"The liquidity position reflects a current ratio of {current_ratio:.2f}."
-    )
-
-    financial = (
-        "Profitability is strong." if margin > 10 else
-        "Profitability is moderate." if margin > 5 else
-        "Profitability is weak."
-    )
-
-    banking = (
-        "Banking conduct is clean." if bounce == 0 else
-        f"{bounce} cheque returns observed."
-    )
-
-    fraud_text = "No major fraud indicators detected."
-    if fraud_flags:
-        fraud_text = "Red flags: " + ", ".join(fraud_flags)
-
-    recommendation = (
-        "Proposal recommended for approval."
-        if risk["Decision"] == "Approve" and accuracy >= 70
-        else "Proceed with caution and additional verification."
-    )
-
-    return {
-        "Executive_Summary": executive,
-        "Financial_Assessment": financial,
-        "Banking_Assessment": banking,
-        "Fraud_Observation": fraud_text,
-        "Final_Recommendation": recommendation
-    }
+    return wc_limit, score, decision, margin, current_ratio
 
 # ---------------- FULL ANALYSIS ----------------
 @app.post("/full-analysis")
@@ -155,167 +172,57 @@ async def full_analysis(
     bank_file: UploadFile = File(...)
 ):
 
-    async def extract_text(file):
-        text = ""
-        filename = file.filename.lower()
+    bank_bytes = await bank_file.read()
+    bank_data = parse_bank_statement(bank_bytes, bank_file.filename)
 
-        if filename.endswith((".xlsx",".xls")):
-            df = pd.read_excel(io.BytesIO(await file.read()))
-            text = df.to_string().lower()
+    if bank_data.get("error"):
+        return bank_data
 
-        elif filename.endswith(".csv"):
-            df = pd.read_csv(io.BytesIO(await file.read()))
-            text = df.to_string().lower()
+    bank_turnover = bank_data["credit_total"]
+    bounce = bank_data["bounce_count"]
+    parsing_confidence = bank_data["confidence"]
 
-        elif filename.endswith(".pdf"):
-            with pdfplumber.open(io.BytesIO(await file.read())) as pdf:
-                for page in pdf.pages:
-                    text += page.extract_text() or ""
-            text = text.lower()
+    # Simplified structured PL & BS extraction
+    pl_df = pd.read_excel(io.BytesIO(await pl_file.read()))
+    bs_df = pd.read_excel(io.BytesIO(await bs_file.read()))
 
-        return text
+    sales = pl_df.iloc[:,1].sum()
+    pat = pl_df.iloc[:,-1].sum()
 
-    bs_text = await extract_text(bs_file)
-    pl_text = await extract_text(pl_file)
-    bank_text = await extract_text(bank_file)
-
-    def find_value(text, keyword):
-        match = re.search(keyword + r".{0,40}?(\d[\d,]*\.?\d*)", text)
-        return float(match.group(1).replace(",", "")) if match else 0
-
-    sales = find_value(pl_text, "sales|turnover|revenue")
-    pat = find_value(pl_text, "net profit|pat")
-    dep = find_value(pl_text, "depreciation")
-    stock = find_value(bs_text, "inventory|stock")
-    debtors = find_value(bs_text, "debtors")
-    creditors = find_value(bs_text, "creditors")
-
-    bounce = len(re.findall(r"return|bounce|insufficient", bank_text))
-    bank_turnover = sum(
-        float(n.replace(",", "")) 
-        for n in re.findall(r"\d[\d,]*\.?\d*", bank_text)
-    )
+    stock = bs_df.iloc[:,1].sum()
+    debtors = bs_df.iloc[:,2].sum()
+    creditors = bs_df.iloc[:,3].sum()
 
     mismatch = abs(bank_turnover - sales) / sales * 100 if sales else 0
-
-    accuracy = 100
-    if mismatch > 20: accuracy -= 20
-    if bounce > 3: accuracy -= 15
-    if creditors > (stock + debtors): accuracy -= 15
-
-    fraud_flags = []
-    if mismatch > 30:
-        fraud_flags.append("High Turnover Mismatch")
-    if bounce > 5:
-        fraud_flags.append("Excessive Cheque Bounces")
-    if creditors > (stock + debtors):
-        fraud_flags.append("Negative Working Capital")
 
     data = FinancialInput(
         sales=sales,
         pat=pat,
-        dep=dep,
         stock=stock,
         debtors=debtors,
         creditors=creditors,
-        loan_req=0,
-        emi=0,
-        undocumented=0,
         bounce=bounce
     )
 
-    agri_limit, wc_limit, score, decision, margin, cr, wc_gap, bank_health, grade = calculate_models(data)
+    wc_limit, score, decision, margin, cr = calculate_models(data)
 
     case_id = str(uuid.uuid4())
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     cursor.execute(
         "INSERT INTO cases VALUES (?, ?, ?, ?, ?, ?)",
-        (case_id, agri_limit, wc_limit, score, decision, created_at)
+        (case_id, 0, wc_limit, score, decision, created_at)
     )
     conn.commit()
 
-    risk_data = {"Score": score, "Grade": grade, "Decision": decision}
-
-    ai_summary = generate_ai_summary(
-        {
-            "Sales": sales,
-            "PAT": pat,
-            "Stock": stock,
-            "Debtors": debtors,
-            "Creditors": creditors,
-            "Bounce_Count": bounce
-        },
-        mismatch,
-        accuracy,
-        fraud_flags,
-        risk_data
-    )
-
     return {
         "Case_ID": case_id,
-        "Parsed_Data": {
-            "Sales": sales,
-            "PAT": pat,
-            "Stock": stock,
-            "Debtors": debtors,
-            "Creditors": creditors,
-            "Bank_Turnover": bank_turnover,
-            "Bounce_Count": bounce
-        },
+        "Parsing_Confidence": parsing_confidence,
+        "Bank_Turnover": bank_turnover,
         "Mismatch_%": round(mismatch,2),
-        "Accuracy_Score": accuracy,
-        "Fraud_Flags": fraud_flags,
-        "Eligibility": {
-            "Agri_Limit": round(agri_limit,2),
-            "Working_Capital_Limit": round(wc_limit,2)
-        },
-        "Risk": risk_data,
-        "AI_Summary": ai_summary
+        "Working_Capital_Limit": round(wc_limit,2),
+        "Risk_Score": score,
+        "Decision": decision,
+        "Profit_Margin": round(margin,2),
+        "Current_Ratio": round(cr,2)
     }
-
-# ---------------- CASE HISTORY ----------------
-@app.get("/cases")
-def get_cases():
-    cursor.execute("SELECT * FROM cases ORDER BY created_at DESC")
-    rows = cursor.fetchall()
-    return [{
-        "Case_ID": r[0],
-        "Agri_Limit": r[1],
-        "WC_Limit": r[2],
-        "Risk_Score": r[3],
-        "Decision": r[4],
-        "Created_At": r[5]
-    } for r in rows]
-
-# ---------------- CAM PDF ----------------
-@app.get("/generate-cam/{case_id}")
-def generate_cam(case_id: str):
-
-    cursor.execute("SELECT * FROM cases WHERE id=?", (case_id,))
-    row = cursor.fetchone()
-
-    if not row:
-        return {"error": "Case not found"}
-
-    filename = f"CAM_{case_id}.pdf"
-    doc = SimpleDocTemplate(filename)
-    elements = []
-    styles = getSampleStyleSheet()
-
-    elements.append(Paragraph("<b>CREDIT APPRAISAL MEMORANDUM</b>", styles["Title"]))
-    elements.append(Spacer(1, 0.5 * inch))
-
-    table_data = [
-        ["Case ID", row[0]],
-        ["Agriculture Limit", f"{row[1]:,.2f}"],
-        ["Working Capital Limit", f"{row[2]:,.2f}"],
-        ["Risk Score", row[3]],
-        ["Decision", row[4]],
-        ["Date", row[5]]
-    ]
-
-    elements.append(Table(table_data))
-    doc.build(elements)
-
-    return FileResponse(filename, media_type="application/pdf", filename=filename)
