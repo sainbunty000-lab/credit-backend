@@ -4,3 +4,4 @@ reportlab
 pandas
 pdfplumber
 openpyxl
+python-multipart
