@@ -13,7 +13,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
-app = FastAPI(title="Enterprise Underwriting Engine")
+app = FastAPI(title="Enterprise AI Underwriting Engine")
 
 # ---------------- CORS ----------------
 app.add_middleware(
@@ -99,7 +99,55 @@ def calculate_models(data):
 
     return agri_limit, wc_limit, score, decision, margin, current_ratio, wc_gap, banking_health, grade
 
-# ---------------- FULL ANALYSIS (3 FILES) ----------------
+# ---------------- AI EXPLANATION ENGINE ----------------
+def generate_ai_summary(parsed, mismatch, accuracy, fraud_flags, risk):
+
+    sales = parsed["Sales"]
+    pat = parsed["PAT"]
+    stock = parsed["Stock"]
+    debtors = parsed["Debtors"]
+    creditors = parsed["Creditors"]
+    bounce = parsed["Bounce_Count"]
+
+    margin = (pat / sales * 100) if sales else 0
+    current_ratio = (stock + debtors) / creditors if creditors else 0
+
+    executive = (
+        f"The applicant reports annual sales of ₹{sales:,.0f} "
+        f"with a profit margin of {margin:.2f}%. "
+        f"The liquidity position reflects a current ratio of {current_ratio:.2f}."
+    )
+
+    financial = (
+        "Profitability is strong." if margin > 10 else
+        "Profitability is moderate." if margin > 5 else
+        "Profitability is weak."
+    )
+
+    banking = (
+        "Banking conduct is clean." if bounce == 0 else
+        f"{bounce} cheque returns observed."
+    )
+
+    fraud_text = "No major fraud indicators detected."
+    if fraud_flags:
+        fraud_text = "Red flags: " + ", ".join(fraud_flags)
+
+    recommendation = (
+        "Proposal recommended for approval."
+        if risk["Decision"] == "Approve" and accuracy >= 70
+        else "Proceed with caution and additional verification."
+    )
+
+    return {
+        "Executive_Summary": executive,
+        "Financial_Assessment": financial,
+        "Banking_Assessment": banking,
+        "Fraud_Observation": fraud_text,
+        "Final_Recommendation": recommendation
+    }
+
+# ---------------- FULL ANALYSIS ----------------
 @app.post("/full-analysis")
 async def full_analysis(
     bs_file: UploadFile = File(...),
@@ -135,7 +183,6 @@ async def full_analysis(
         match = re.search(keyword + r".{0,40}?(\d[\d,]*\.?\d*)", text)
         return float(match.group(1).replace(",", "")) if match else 0
 
-    # EXTRACT DATA
     sales = find_value(pl_text, "sales|turnover|revenue")
     pat = find_value(pl_text, "net profit|pat")
     dep = find_value(pl_text, "depreciation")
@@ -144,19 +191,18 @@ async def full_analysis(
     creditors = find_value(bs_text, "creditors")
 
     bounce = len(re.findall(r"return|bounce|insufficient", bank_text))
-    bank_numbers = re.findall(r"\d[\d,]*\.?\d*", bank_text)
-    bank_turnover = sum(float(n.replace(",", "")) for n in bank_numbers)
+    bank_turnover = sum(
+        float(n.replace(",", "")) 
+        for n in re.findall(r"\d[\d,]*\.?\d*", bank_text)
+    )
 
-    # MISMATCH %
     mismatch = abs(bank_turnover - sales) / sales * 100 if sales else 0
 
-    # ACCURACY SCORE
     accuracy = 100
     if mismatch > 20: accuracy -= 20
     if bounce > 3: accuracy -= 15
     if creditors > (stock + debtors): accuracy -= 15
 
-    # FRAUD FLAGS
     fraud_flags = []
     if mismatch > 30:
         fraud_flags.append("High Turnover Mismatch")
@@ -189,6 +235,23 @@ async def full_analysis(
     )
     conn.commit()
 
+    risk_data = {"Score": score, "Grade": grade, "Decision": decision}
+
+    ai_summary = generate_ai_summary(
+        {
+            "Sales": sales,
+            "PAT": pat,
+            "Stock": stock,
+            "Debtors": debtors,
+            "Creditors": creditors,
+            "Bounce_Count": bounce
+        },
+        mismatch,
+        accuracy,
+        fraud_flags,
+        risk_data
+    )
+
     return {
         "Case_ID": case_id,
         "Parsed_Data": {
@@ -207,12 +270,8 @@ async def full_analysis(
             "Agri_Limit": round(agri_limit,2),
             "Working_Capital_Limit": round(wc_limit,2)
         },
-        "Risk": {
-            "Score": score,
-            "Grade": grade,
-            "Decision": decision,
-            "Banking_Health": bank_health
-        }
+        "Risk": risk_data,
+        "AI_Summary": ai_summary
     }
 
 # ---------------- CASE HISTORY ----------------
@@ -229,7 +288,7 @@ def get_cases():
         "Created_At": r[5]
     } for r in rows]
 
-# ---------------- CAM GENERATOR ----------------
+# ---------------- CAM PDF ----------------
 @app.get("/generate-cam/{case_id}")
 def generate_cam(case_id: str):
 
@@ -247,7 +306,7 @@ def generate_cam(case_id: str):
     elements.append(Paragraph("<b>CREDIT APPRAISAL MEMORANDUM</b>", styles["Title"]))
     elements.append(Spacer(1, 0.5 * inch))
 
-    data = [
+    table_data = [
         ["Case ID", row[0]],
         ["Agriculture Limit", f"{row[1]:,.2f}"],
         ["Working Capital Limit", f"{row[2]:,.2f}"],
@@ -256,8 +315,7 @@ def generate_cam(case_id: str):
         ["Date", row[5]]
     ]
 
-    table = Table(data)
-    elements.append(table)
+    elements.append(Table(table_data))
     doc.build(elements)
 
     return FileResponse(filename, media_type="application/pdf", filename=filename)
