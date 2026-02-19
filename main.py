@@ -58,19 +58,23 @@ class FinancialInput(BaseModel):
 # ---------------- CORE ENGINE ----------------
 def calculate_models(data):
 
-    margin = (data.pat / data.sales) * 100 if data.sales else 0
-    current_ratio = (data.stock + data.debtors) / data.creditors if data.creditors else 0
-    wc_gap = (data.stock + data.debtors) - data.creditors
-
+    # ---------------- AGRICULTURE MODEL ----------------
     nca = data.pat + data.dep
     scale = 0.7 if data.loan_req > 3000000 else 0.6
     surplus = (nca * scale / 12) - data.emi + (data.undocumented * 0.42 / 12)
-    income_limit = max(0, surplus / 0.14)
+    agri_limit = max(0, surplus / 0.14)
+
+    # ---------------- WORKING CAPITAL MODEL ----------------
+    wc_gap = (data.stock + data.debtors) - data.creditors
     turnover_limit = data.sales * 0.20
-    mpbf = max(0, wc_gap * 0.75)
+    mpbf_limit = max(0, wc_gap * 0.75)
+    wc_limit = min(turnover_limit, mpbf_limit)
 
-    final = min(income_limit, turnover_limit, mpbf)
+    # ---------------- RATIOS ----------------
+    margin = (data.pat / data.sales) * 100 if data.sales else 0
+    current_ratio = (data.stock + data.debtors) / data.creditors if data.creditors else 0
 
+    # ---------------- RISK SCORE ----------------
     score = 0
     score += 20 if margin > 10 else 15 if margin > 5 else 8
     score += 20 if current_ratio >= 1.5 else 15 if current_ratio >= 1.2 else 8
@@ -93,7 +97,17 @@ def calculate_models(data):
     elif data.bounce > 0:
         banking_health = "Moderate"
 
-    return final, score, decision, margin, current_ratio, wc_gap, banking_health, grade
+    return (
+        agri_limit,
+        wc_limit,
+        score,
+        decision,
+        margin,
+        current_ratio,
+        wc_gap,
+        banking_health,
+        grade
+    )
 
 # ---------------- ANALYZE ----------------
 @app.post("/analyze")
@@ -111,8 +125,34 @@ def analyze(data: FinancialInput):
     conn.commit()
 
     return {
+           (
+        agri_limit,
+        wc_limit,
+        score,
+        decision,
+        margin,
+        cr,
+        wc_gap,
+        bank_health,
+        grade
+    ) = calculate_models(data)
+
+    case_id = str(uuid.uuid4())
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    cursor.execute("""
+    INSERT INTO cases VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (case_id, data.sales, data.pat, data.dep,
+          wc_limit, score, decision, created_at))
+    conn.commit()
+
+    return {
         "Case_ID": case_id,
-        "Final_Limit": round(final, 2),
+
+        # Two Separate Limits
+        "Agri_Eligible_Limit": round(agri_limit, 2),
+        "Working_Capital_Limit": round(wc_limit, 2),
+
         "Risk_Score": score,
         "Decision": decision,
         "Profit_Margin": round(margin, 2),
