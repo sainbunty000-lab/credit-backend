@@ -23,7 +23,10 @@ app.add_middleware(
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+    engine = create_engine(DATABASE_URL)
 else:
     engine = create_engine("sqlite:///./agri_wc.db")
 
