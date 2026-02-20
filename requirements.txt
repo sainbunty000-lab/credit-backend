@@ -6,3 +6,5 @@ pillow
 python-multipart
 pandas
 openpyxl
+sqlalchemy
+psycopg2-binary
