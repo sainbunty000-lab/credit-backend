@@ -121,59 +121,56 @@ async def analyze(
 
     case_id = str(uuid.uuid4())[:8]
 
-    bs_data = await parse_file(bs_file)
-pl_data = await parse_file(pl_file)
-bank_data = await parse_file(bank_file) if bank_file else {}
+    # Parse files
+    bs_text = await parse_file(bs_file)
+    pl_text = await parse_file(pl_file)
+    bank_text = await parse_file(bank_file) if bank_file else ""
 
-sales = pl_data.get("sales", 0)
-net_profit = pl_data.get("profit", 0)
-inventory = bs_data.get("inventory", 0)
-debtors = bs_data.get("debtors", 0)
-creditors = bs_data.get("creditors", 0)
+    # Extract values
+    sales = find_amount(pl_text, ["sales", "turnover"])
+    net_profit = find_amount(pl_text, ["net profit"])
+    inventory = find_amount(bs_text, ["inventory", "stock"])
+    debtors = find_amount(bs_text, ["debtors"])
+    creditors = find_amount(bs_text, ["creditors"])
 
+    # Financial calculations
     current_assets = inventory + debtors
     current_liabilities = creditors
+
     nwc = current_assets - current_liabilities
-    current_ratio = (current_assets / current_liabilities) if current_liabilities else 0
+
+    if current_liabilities > 0:
+        current_ratio = current_assets / current_liabilities
+    else:
+        current_ratio = 0
+
     mpbf = (0.75 * current_assets) - current_liabilities
-    wc_limit = sales * 0.20
-    agri_limit = ((net_profit * 0.60)/12)/0.14 if net_profit else 0
+    wc_limit = sales * 0.20 if sales else 0
+    agri_limit = ((net_profit * 0.60) / 12) / 0.14 if net_profit else 0
 
-    # -------- Risk Model --------
-    risk_score = 100
-    fraud_flags = []
+    # Risk scoring
+    risk_score = 80
 
-    if current_ratio < 1.25:
-        risk_score -= 15
-        fraud_flags.append("Weak Current Ratio")
+    if current_ratio < 1:
+        risk_score -= 20
 
     if net_profit <= 0:
-        risk_score -= 25
-        fraud_flags.append("Negative Profit")
+        risk_score -= 20
 
-    if sales <= 0:
-        risk_score -= 25
-        fraud_flags.append("Sales Not Found")
-
-    if nwc <= 0:
-        risk_score -= 15
-        fraud_flags.append("Negative Working Capital")
-
-    risk_score = max(risk_score, 0)
-    decision = "Approve" if risk_score >= 70 else "Review"
+    decision = "Approve" if risk_score >= 60 else "Review"
 
     memo = f"""
-    The annual turnover is assessed at {sales}.
-    Net Working Capital computed at {nwc}.
-    Current Ratio stands at {round(current_ratio,2)}.
-    MPBF eligibility under Tandon II method calculated at {mpbf}.
-    Working Capital limit (20% turnover) derived at {wc_limit}.
-    Agriculture eligibility assessed at {agri_limit}.
-    Overall risk score evaluated at {risk_score}.
-    Fraud flags observed: {", ".join(fraud_flags) if fraud_flags else "None"}.
-    Final credit recommendation: {decision}.
-    """
+Annual turnover assessed at {sales}.
+Net Working Capital stands at {nwc}.
+Current Ratio computed at {round(current_ratio,2)}.
+MPBF eligibility as per Tandon II is {mpbf}.
+Working Capital (20% method) calculated at {wc_limit}.
+Agriculture eligibility based on profit stress model is {agri_limit}.
+Final risk score evaluated at {risk_score}.
+Credit decision recommended as {decision}.
+"""
 
+    # Save to DB
     db = SessionLocal()
     record = CaseRecord(
         case_id=case_id,
@@ -197,6 +194,5 @@ creditors = bs_data.get("creditors", 0)
         "Agri_Limit": agri_limit,
         "Risk_Score": risk_score,
         "Decision": decision,
-        "Fraud_Flags": fraud_flags,
         "Memo": memo
     }
