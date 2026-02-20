@@ -8,6 +8,10 @@ import os
 
 app = FastAPI(title="Agri / WC Calculator")
 
+@app.get("/")
+def home():
+    return {"status": "Agri / WC Calculator Running"}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
