@@ -18,14 +18,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- DATABASE (AUTO SAFE) ----------------
+# ---------------- DATABASE ----------------
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
     engine = create_engine(DATABASE_URL)
 else:
-    engine = create_engine("sqlite:///./agri_wc.db")  # fallback
+    engine = create_engine("sqlite:///./agri_wc.db")
 
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
@@ -45,29 +45,29 @@ Base.metadata.create_all(bind=engine)
 def health():
     return {"status": "Agri / WC Calculator Running"}
 
-# ---------------- FILE PARSER ----------------
+# ---------------- PARSER ----------------
 
-def parse_excel(content):
-    df = pd.read_excel(io.BytesIO(content))
-    return df.to_string().lower()
-
-def parse_csv(content):
-    df = pd.read_csv(io.BytesIO(content))
-    return df.to_string().lower()
-
-def parse_text(content):
-    return content.decode(errors="ignore").lower()
+def parse_file_content(content):
+    try:
+        text = content.decode(errors="ignore").lower()
+    except:
+        text = str(content).lower()
+    return text
 
 async def parse_file(file):
     content = await file.read()
     name = file.filename.lower()
 
     if name.endswith((".xls",".xlsx")):
-        return parse_excel(content)
+        df = pd.read_excel(io.BytesIO(content))
+        return df.to_string().lower()
+
     elif name.endswith(".csv"):
-        return parse_csv(content)
+        df = pd.read_csv(io.BytesIO(content))
+        return df.to_string().lower()
+
     else:
-        return parse_text(content)
+        return parse_file_content(content)
 
 def find_amount(text, keywords):
     for key in keywords:
@@ -77,7 +77,7 @@ def find_amount(text, keywords):
             return float(match.group(1).replace(",", ""))
     return 0
 
-# ---------------- MAIN ANALYSIS ----------------
+# ---------------- ANALYSIS ----------------
 
 @app.post("/analyze")
 async def analyze(
@@ -90,74 +90,40 @@ async def analyze(
 
     bs_text = await parse_file(bs_file)
     pl_text = await parse_file(pl_file)
-
-    bank_text = ""
-    if bank_file:
-        bank_text = await parse_file(bank_file)
-
-    # ---- Extract Core Values ----
+    bank_text = await parse_file(bank_file) if bank_file else ""
 
     sales = find_amount(pl_text, ["sales","turnover"])
     net_profit = find_amount(pl_text, ["net profit"])
-    ebitda = find_amount(pl_text, ["ebitda"])
     inventory = find_amount(bs_text, ["inventory","stock"])
     debtors = find_amount(bs_text, ["debtors"])
     creditors = find_amount(bs_text, ["creditors"])
-    total_debt = find_amount(bs_text, ["loan","borrowings"])
 
-    # ---- NWC ----
     current_assets = inventory + debtors
     current_liabilities = creditors
     nwc = current_assets - current_liabilities
-
-    # ---- Current Ratio ----
     current_ratio = (current_assets / current_liabilities) if current_liabilities else 0
-
-    # ---- MPBF (Tandon II) ----
     mpbf = (0.75 * current_assets) - current_liabilities
-
-    # ---- Working Capital (20% Method) ----
     wc_limit = sales * 0.20 if sales else 0
-
-    # ---- DSCR ----
-    dscr = (net_profit + total_debt*0.1) / total_debt if total_debt else 0
-
-    # ---- Agri Limit (Profit Based) ----
     agri_limit = ((net_profit * 0.60)/12)/0.14 if net_profit else 0
 
-    # ---- EBITDA Funding ----
-    ebitda_limit = ebitda * 4 if ebitda else 0
-
-    # ---- Banking Hygiene ----
-    banking_score = 85
-    if bank_text and "bounce" in bank_text:
-        banking_score = 60
-
-    # ---- Risk Score ----
     risk_score = 80
     if current_ratio < 1:
         risk_score -= 20
-    if dscr < 1.2:
-        risk_score -= 20
-    if banking_score < 70:
+    if net_profit <= 0:
         risk_score -= 20
 
     decision = "Approve" if risk_score >= 60 else "Review"
 
-    # ---- Memo Paragraph ----
-
     memo = f"""
-    The financial analysis of the applicant indicates annual turnover of {sales}.
-    Net working capital stands at {nwc} with current ratio of {round(current_ratio,2)}.
-    MPBF eligibility computed under Tandon II method is {mpbf}.
-    DSCR is assessed at {round(dscr,2)}.
-    Based on EBITDA multiple method, eligible funding is {ebitda_limit}.
-    Banking hygiene score evaluated at {banking_score}.
-    Overall risk score computed at {risk_score}.
-    Final recommendation: {decision}.
+    Annual turnover assessed at {sales}.
+    Net Working Capital stands at {nwc}.
+    Current Ratio computed at {round(current_ratio,2)}.
+    MPBF eligibility as per Tandon II is {mpbf}.
+    Working Capital (20% method) calculated at {wc_limit}.
+    Agriculture eligibility based on profit stress model is {agri_limit}.
+    Final risk score evaluated at {risk_score}.
+    Credit decision recommended as {decision}.
     """
-
-    # ---- Save ----
 
     db = SessionLocal()
     record = CaseRecord(
@@ -180,17 +146,7 @@ async def analyze(
         "MPBF": mpbf,
         "Working_Capital_Limit": wc_limit,
         "Agri_Limit": agri_limit,
-        "DSCR": dscr,
-        "EBITDA_Limit": ebitda_limit,
-        "Banking_Score": banking_score,
         "Risk_Score": risk_score,
         "Decision": decision,
         "Memo": memo
     }
-
-@app.get("/cases")
-def get_cases():
-    db = SessionLocal()
-    records = db.query(CaseRecord).all()
-    db.close()
-    return records
