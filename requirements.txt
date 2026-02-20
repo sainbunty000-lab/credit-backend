@@ -1,10 +1,10 @@
 fastapi
 uvicorn
-pdf2image
 pytesseract
+pdf2image
 pillow
-python-multipart
 pandas
 openpyxl
+python-multipart
 sqlalchemy
 psycopg2-binary
