@@ -20,33 +20,25 @@ app.add_middleware(
 
 # ---------------- DATABASE ----------------
 
+import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
-    engine = create_engine(DATABASE_URL)
+    try:
+        engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    except Exception as e:
+        print("DB CONNECTION ERROR:", e)
+        engine = create_engine("sqlite:///./agri_wc.db")
 else:
     engine = create_engine("sqlite:///./agri_wc.db")
 
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
-
-class CaseRecord(Base):
-    __tablename__ = "cases"
-    case_id = Column(String, primary_key=True)
-    sales = Column(Float)
-    wc_limit = Column(Float)
-    agri_limit = Column(Float)
-    risk_score = Column(Integer)
-    decision = Column(String)
-
-Base.metadata.create_all(bind=engine)
-
-@app.get("/")
-def health():
-    return {"status": "Agri / WC Calculator Running"}
 
 # ---------------- ADVANCED PARSER ----------------
 
