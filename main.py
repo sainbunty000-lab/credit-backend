@@ -22,13 +22,22 @@ def health():
 
 # ---------------- PARSER ----------------
 
-def extract_amount(text, keywords):
-    for key in keywords:
-        pattern = rf"{key}[^0-9]*([\d,]+(?:\.\d+)?)"
-        match = re.search(pattern, text.lower())
-        if match:
-            return float(match.group(1).replace(",", ""))
-    return 0
+async def parse_file(file):
+    content = await file.read()
+    name = file.filename.lower()
+
+    if name.endswith((".xls", ".xlsx")):
+        df = pd.read_excel(io.BytesIO(content), header=None)
+        df = df.astype(str)
+        return " ".join(df.values.flatten()).lower()
+
+    elif name.endswith(".csv"):
+        df = pd.read_csv(io.BytesIO(content), header=None)
+        df = df.astype(str)
+        return " ".join(df.values.flatten()).lower()
+
+    else:
+        return content.decode(errors="ignore").lower()
 
 # ---------------- FINANCIAL ENGINE ----------------
 
@@ -71,30 +80,24 @@ def compute_metrics(data):
 
 def risk_engine(metrics):
 
-    score = 100
-    flags = []
+    risk_score = 100
 
-    if metrics["Current_Ratio"] < 1:
-        score -= 25
-        flags.append("Weak liquidity position")
+if current_ratio < 1.25:
+    risk_score -= 15
 
-    if metrics["DSCR"] < 1.2:
-        score -= 25
-        flags.append("Debt servicing stress")
+if net_profit <= 0:
+    risk_score -= 25
 
-    if metrics["NWC"] < 0:
-        score -= 15
-        flags.append("Negative working capital")
+if sales <= 0:
+    risk_score -= 25
 
-    if metrics["EBITDA"] <= 0:
-        score -= 20
-        flags.append("Negative operating profitability")
+if nwc <= 0:
+    risk_score -= 15
 
-    classification = (
-        "Low Risk" if score >= 80 else
-        "Moderate Risk" if score >= 60 else
-        "High Risk"
-    )
+if mpbf <= 0:
+    risk_score -= 20
+
+risk_score = max(risk_score, 0)
 
     return score, classification, flags
 
