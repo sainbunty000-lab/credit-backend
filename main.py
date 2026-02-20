@@ -1,7 +1,5 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, String, Float, Integer
-from sqlalchemy.orm import declarative_base, sessionmaker
 import pandas as pd
 import io
 import re
