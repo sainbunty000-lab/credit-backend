@@ -75,41 +75,47 @@ def extract_from_dataframe(df):
     }
 
 async def parse_file(file: UploadFile):
-    content = await file.read()
-    name = file.filename.lower()
 
-    if name.endswith((".xlsx", ".xls")):
-        excel_data = pd.ExcelFile(io.BytesIO(content))
-        combined_data = {
-            "sales": 0,
-            "net_profit": 0,
-            "inventory": 0,
-            "debtors": 0,
-            "creditors": 0
-        }
+    if not file:
+        return {}
 
-        for sheet in excel_data.sheet_names:
-            df = excel_data.parse(sheet, header=None)
-            result = extract_from_dataframe(df)
-            for key in combined_data:
-                if result[key] != 0:
-                    combined_data[key] = result[key]
+    try:
+        content = await file.read()
+        name = file.filename.lower()
 
-        return combined_data
+        if name.endswith(".xlsx"):
+            df = pd.read_excel(io.BytesIO(content), engine="openpyxl", header=None)
 
-    elif name.endswith(".csv"):
-        df = pd.read_csv(io.BytesIO(content), header=None)
-        return extract_from_dataframe(df)
+        elif name.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(content), header=None)
 
-    else:
-        text = content.decode(errors="ignore").lower()
+        else:
+            return {}
+
+        df = df.fillna("")
+        df = df.astype(str)
+
+        flat_text = " ".join(df.values.flatten()).lower()
+
+        def find(keywords):
+            for key in keywords:
+                pattern = rf"{key}[^0-9\-]*(-?\d[\d,\.]*)"
+                match = re.search(pattern, flat_text)
+                if match:
+                    return float(match.group(1).replace(",", ""))
+            return 0
+
         return {
-            "sales": 0,
-            "net_profit": 0,
-            "inventory": 0,
-            "debtors": 0,
-            "creditors": 0
+            "sales": find(["sales", "turnover", "revenue"]),
+            "profit": find(["net profit", "profit after tax"]),
+            "inventory": find(["inventory", "stock"]),
+            "debtors": find(["debtors", "receivables"]),
+            "creditors": find(["creditors", "payables"])
         }
+
+    except Exception as e:
+        print("PARSE ERROR:", str(e))
+        return {}
 
 # ---------------- ANALYSIS ----------------
 
@@ -123,13 +129,14 @@ async def analyze(
     case_id = str(uuid.uuid4())[:8]
 
     bs_data = await parse_file(bs_file)
-    pl_data = await parse_file(pl_file)
+pl_data = await parse_file(pl_file)
+bank_data = await parse_file(bank_file) if bank_file else {}
 
-    sales = pl_data["sales"]
-    net_profit = pl_data["net_profit"]
-    inventory = bs_data["inventory"]
-    debtors = bs_data["debtors"]
-    creditors = bs_data["creditors"]
+sales = pl_data.get("sales", 0)
+net_profit = pl_data.get("profit", 0)
+inventory = bs_data.get("inventory", 0)
+debtors = bs_data.get("debtors", 0)
+creditors = bs_data.get("creditors", 0)
 
     current_assets = inventory + debtors
     current_liabilities = creditors
