@@ -18,14 +18,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- DATABASE ----------------
+# ---------------- DATABASE SETUP ----------------
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
-    engine = create_engine(DATABASE_URL)
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_recycle=300
+    )
 else:
-    engine = create_engine("sqlite:///./agri_wc.db")
+    engine = create_engine("sqlite:///./local.db")
 
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
@@ -45,20 +52,21 @@ Base.metadata.create_all(bind=engine)
 def health():
     return {"status": "Agri / WC Calculator Running"}
 
-# ---------------- PARSER ----------------
+# ---------------- FILE PARSING ----------------
 
-def parse_file_content(content):
-    try:
-        text = content.decode(errors="ignore").lower()
-    except:
-        text = str(content).lower()
-    return text
+def extract_amount(text, keywords):
+    for key in keywords:
+        pattern = rf"{key}[^0-9]*([\d,]+\.\d+|[\d,]+)"
+        match = re.search(pattern, text)
+        if match:
+            return float(match.group(1).replace(",", ""))
+    return 0
 
 async def parse_file(file):
     content = await file.read()
     name = file.filename.lower()
 
-    if name.endswith((".xls",".xlsx")):
+    if name.endswith((".xls", ".xlsx")):
         df = pd.read_excel(io.BytesIO(content))
         return df.to_string().lower()
 
@@ -67,15 +75,7 @@ async def parse_file(file):
         return df.to_string().lower()
 
     else:
-        return parse_file_content(content)
-
-def find_amount(text, keywords):
-    for key in keywords:
-        pattern = rf"{key}[^0-9]*([\d,]+\.\d+|[\d,]+)"
-        match = re.search(pattern, text)
-        if match:
-            return float(match.group(1).replace(",", ""))
-    return 0
+        return content.decode(errors="ignore").lower()
 
 # ---------------- ANALYSIS ----------------
 
@@ -90,13 +90,12 @@ async def analyze(
 
     bs_text = await parse_file(bs_file)
     pl_text = await parse_file(pl_file)
-    bank_text = await parse_file(bank_file) if bank_file else ""
 
-    sales = find_amount(pl_text, ["sales","turnover"])
-    net_profit = find_amount(pl_text, ["net profit"])
-    inventory = find_amount(bs_text, ["inventory","stock"])
-    debtors = find_amount(bs_text, ["debtors"])
-    creditors = find_amount(bs_text, ["creditors"])
+    sales = extract_amount(pl_text, ["sales", "turnover"])
+    net_profit = extract_amount(pl_text, ["net profit"])
+    inventory = extract_amount(bs_text, ["inventory", "stock"])
+    debtors = extract_amount(bs_text, ["debtors"])
+    creditors = extract_amount(bs_text, ["creditors"])
 
     current_assets = inventory + debtors
     current_liabilities = creditors
@@ -115,14 +114,14 @@ async def analyze(
     decision = "Approve" if risk_score >= 60 else "Review"
 
     memo = f"""
-    Annual turnover assessed at {sales}.
-    Net Working Capital stands at {nwc}.
-    Current Ratio computed at {round(current_ratio,2)}.
-    MPBF eligibility as per Tandon II is {mpbf}.
-    Working Capital (20% method) calculated at {wc_limit}.
-    Agriculture eligibility based on profit stress model is {agri_limit}.
-    Final risk score evaluated at {risk_score}.
-    Credit decision recommended as {decision}.
+    Turnover assessed at {sales}.
+    Net Working Capital: {nwc}.
+    Current Ratio: {round(current_ratio,2)}.
+    MPBF (Tandon II): {mpbf}.
+    WC (20% method): {wc_limit}.
+    Agriculture Eligibility: {agri_limit}.
+    Risk Score: {risk_score}.
+    Decision: {decision}.
     """
 
     db = SessionLocal()
