@@ -4,7 +4,11 @@ import os
 import uuid
 import re
 
-app = FastAPI()
+from sqlalchemy import create_engine, Column, String, Float, Integer
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+app = FastAPI(title="Agri / WC Calculator")
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,17 +18,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------------- SAFE DATABASE INIT ----------------
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+engine = None
+SessionLocal = None
+Base = declarative_base()
+
+if DATABASE_URL:
+    engine = create_engine(DATABASE_URL)
+    SessionLocal = sessionmaker(bind=engine)
+
+    class CaseRecord(Base):
+        __tablename__ = "cases"
+        case_id = Column(String, primary_key=True, index=True)
+        sales = Column(Float)
+        wc_limit = Column(Float)
+        agri_limit = Column(Float)
+        risk_score = Column(Integer)
+        decision = Column(String)
+
+    Base.metadata.create_all(bind=engine)
+
+# ---------------- HEALTH CHECK ----------------
+
 @app.get("/")
 def home():
     return {"status": "Agri / WC Calculator Running"}
 
+# ---------------- SIMPLE TEXT PARSER ----------------
+
 def extract_amount(text, keywords):
     for key in keywords:
-        pattern = rf"{key}[^0-9]*([\d,]+\.\d+|[\d,]+)"
-        match = re.search(pattern, text)
+        pattern = rf"{key}[^0-9]*([\d,]+(?:\.\d+)?)"
+        match = re.search(pattern, text.lower())
         if match:
             return float(match.group(1).replace(",", ""))
     return 0
+
+# ---------------- MAIN ANALYSIS ----------------
 
 @app.post("/analyze")
 async def analyze(
@@ -33,36 +66,44 @@ async def analyze(
     bank_file: UploadFile = File(None)
 ):
 
-    bs_content = (await bs_file.read()).decode(errors="ignore").lower()
-    pl_content = (await pl_file.read()).decode(errors="ignore").lower()
+    case_id = str(uuid.uuid4())[:8]
 
-    sales = extract_amount(pl_content, ["sales","turnover"])
-    profit = extract_amount(pl_content, ["net profit"])
-    inventory = extract_amount(bs_content, ["inventory","stock"])
-    debtors = extract_amount(bs_content, ["debtors"])
-    creditors = extract_amount(bs_content, ["creditors"])
+    bs_text = (await bs_file.read()).decode(errors="ignore")
+    pl_text = (await pl_file.read()).decode(errors="ignore")
+
+    sales = extract_amount(pl_text, ["sales", "turnover"])
+    profit = extract_amount(pl_text, ["net profit"])
+    inventory = extract_amount(bs_text, ["inventory", "stock"])
+    debtors = extract_amount(bs_text, ["debtors"])
+    creditors = extract_amount(bs_text, ["creditors"])
 
     current_assets = inventory + debtors
-    current_liabilities = creditors
-    nwc = current_assets - current_liabilities
-    current_ratio = current_assets / current_liabilities if current_liabilities else 0
-    mpbf = (0.75 * current_assets) - current_liabilities
+    nwc = current_assets - creditors
+    mpbf = (0.75 * current_assets) - creditors
     wc_limit = sales * 0.20 if sales else 0
     agri_limit = ((profit * 0.60)/12)/0.14 if profit else 0
 
-    risk_score = 80
-    if current_ratio < 1:
-        risk_score -= 20
-    if profit <= 0:
-        risk_score -= 20
-
+    risk_score = 80 if sales > 0 else 50
     decision = "Approve" if risk_score >= 60 else "Review"
 
+    if SessionLocal:
+        db = SessionLocal()
+        record = CaseRecord(
+            case_id=case_id,
+            sales=sales,
+            wc_limit=wc_limit,
+            agri_limit=agri_limit,
+            risk_score=risk_score,
+            decision=decision
+        )
+        db.add(record)
+        db.commit()
+        db.close()
+
     return {
-        "Case_ID": str(uuid.uuid4())[:8],
+        "Case_ID": case_id,
         "Sales": sales,
         "NWC": nwc,
-        "Current_Ratio": current_ratio,
         "MPBF": mpbf,
         "Working_Capital_Limit": wc_limit,
         "Agri_Limit": agri_limit,
