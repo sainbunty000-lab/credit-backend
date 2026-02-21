@@ -51,25 +51,45 @@ def clean_number(value):
         return 0.0
 
 def extract_from_dataframe(df):
+
+    df = df.fillna("")
     df = df.astype(str)
-    flat = df.values.flatten()
-    text = " ".join(flat).lower()
 
-    def find(keywords):
-        for key in keywords:
-            pattern = rf"{key}[^0-9\-]*(-?\d[\d,\.]*)"
-            match = re.search(pattern, text)
-            if match:
-                return clean_number(match.group(1))
-        return 0
-
-    return {
-        "sales": find(["sales", "turnover", "revenue"]),
-        "net_profit": find(["net profit", "profit after tax"]),
-        "inventory": find(["inventory", "stock"]),
-        "debtors": find(["debtors", "receivables"]),
-        "creditors": find(["creditors", "payables"])
+    result = {
+        "sales": 0,
+        "profit": 0,
+        "inventory": 0,
+        "debtors": 0,
+        "creditors": 0
     }
+
+    keywords_map = {
+        "sales": ["sales", "turnover", "revenue", "total income"],
+        "profit": ["net profit", "profit after tax", "pat"],
+        "inventory": ["inventory", "stock"],
+        "debtors": ["debtors", "receivables"],
+        "creditors": ["creditors", "payables"]
+    }
+
+    for index, row in df.iterrows():
+        row_values = [str(x).lower() for x in row.values]
+
+        for key, keywords in keywords_map.items():
+            for keyword in keywords:
+                for i, cell in enumerate(row_values):
+                    if keyword in cell:
+                        # Check next columns for numeric value
+                        for j in range(i+1, len(row_values)):
+                            value = row_values[j].replace(",", "")
+                            try:
+                                number = float(value)
+                                if number > 0:
+                                    result[key] = number
+                                    break
+                            except:
+                                continue
+
+    return result
 
 async def parse_file(file: UploadFile):
     if not file:
