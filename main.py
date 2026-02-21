@@ -18,10 +18,14 @@ def safe(v):
     except:
         return 0.0
 
+# ------------------------------
+# MAIN FINANCIAL ENGINE
+# ------------------------------
+
 @app.post("/analyze")
 async def analyze(data: dict):
 
-    # ---------------- WC ----------------
+    # WC
     turnover = safe(data.get("turnover"))
     inventory = safe(data.get("inventory"))
     debtors = safe(data.get("debtors"))
@@ -29,10 +33,10 @@ async def analyze(data: dict):
 
     wc_turnover = turnover * 0.20
     wcg = (inventory + debtors) - creditors
-    wc_mpbf = wcg * 0.75 if wcg > 0 else 0
-    wc_final = min(wc_turnover, wc_mpbf) if wc_turnover and wc_mpbf else max(wc_turnover, wc_mpbf)
+    mpbf = wcg * 0.75 if wcg > 0 else 0
+    wc_final = min(wc_turnover, mpbf) if wc_turnover and mpbf else max(wc_turnover, mpbf)
 
-    # ---------------- TL ----------------
+    # TL
     net_profit = safe(data.get("net_profit"))
     depreciation = safe(data.get("depreciation"))
     emi = safe(data.get("monthly_emi"))
@@ -43,7 +47,7 @@ async def analyze(data: dict):
     surplus = cash_accrual - annual_emi
     tl_eligible = surplus * 6 if surplus > 0 else 0
 
-    # ---------------- AGRI ----------------
+    # AGRI
     tax_paid = safe(data.get("tax_paid"))
     undoc = safe(data.get("undocumented_income"))
 
@@ -55,36 +59,52 @@ async def analyze(data: dict):
 
     return {
         "wc": round(wc_final,2),
-        "wc_turnover_method": round(wc_turnover,2),
-        "wc_mpbf": round(wc_mpbf,2),
-
+        "wc_turnover": round(wc_turnover,2),
+        "mpbf": round(mpbf,2),
         "cash_accrual": round(cash_accrual,2),
         "dscr": round(dscr,2),
         "tl_eligible": round(tl_eligible,2),
-
         "nca": round(nca,2),
-        "scaled_income": round(scaled_income,2),
         "agri_eligible": round(agri_eligible,2)
     }
+
+# ------------------------------
+# BANKING PERFIOS ENGINE
+# ------------------------------
 
 @app.post("/banking")
 async def banking(file: UploadFile = File(...)):
 
     content = await file.read()
-    df = pd.read_excel(io.BytesIO(content)) if file.filename.endswith(("xls","xlsx")) else pd.read_csv(io.BytesIO(content))
 
-    credit_cols = [c for c in df.columns if "credit" in c.lower()]
-    total_credit = df[credit_cols[0]].sum() if credit_cols else 0
+    if file.filename.lower().endswith(("xls","xlsx")):
+        df = pd.read_excel(io.BytesIO(content))
+    else:
+        df = pd.read_csv(io.BytesIO(content))
 
-    bounce = df.astype(str).apply(lambda r: r.str.contains("return|bounce|insufficient|dishonour", case=False).any(), axis=1).sum()
+    df.columns = [str(c).lower() for c in df.columns]
 
-    months = 6
-    avg_credit = total_credit / months if months else 0
+    total_credit = 0
+    total_debit = 0
 
+    for col in df.columns:
+        if "credit" in col or "cr" in col:
+            total_credit += pd.to_numeric(df[col], errors="coerce").fillna(0).sum()
+
+        if "debit" in col or "dr" in col:
+            total_debit += pd.to_numeric(df[col], errors="coerce").fillna(0).sum()
+
+    bounce = df.astype(str).apply(
+        lambda r: r.str.contains("return|bounce|insufficient|dishonour", case=False).any(),
+        axis=1
+    ).sum()
+
+    avg_credit = total_credit / 6 if total_credit else 0
     hygiene = 90 if bounce == 0 else 70 if bounce <= 3 else 50
 
     return {
         "total_credit": round(total_credit,2),
+        "total_debit": round(total_debit,2),
         "avg_monthly_credit": round(avg_credit,2),
         "bounce_count": int(bounce),
         "hygiene_score": hygiene
