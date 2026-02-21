@@ -14,51 +14,53 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------------------
-# UTILITY FUNCTIONS
-# -------------------------------
+# ---------------------------------
+# SMART NUMBER CLEANER
+# ---------------------------------
 
 def clean_number(value):
     try:
-        value = str(value).replace(",", "").strip()
-        return float(re.findall(r"[-+]?\d*\.?\d+", value)[0])
+        value = str(value)
+        value = re.sub(r"[^\d\.-]", "", value)
+        return float(value)
     except:
         return 0.0
 
 
-def extract_from_dataframe(df):
+# ---------------------------------
+# UNIVERSAL FINANCIAL PARSER
+# ---------------------------------
+
+def extract_financial_data(df):
+
     df = df.fillna("")
     df = df.astype(str)
 
-    result = {
-        "sales": 0,
-        "profit": 0,
-        "inventory": 0,
-        "debtors": 0,
-        "creditors": 0,
-        "current_assets": 0,
-        "current_liabilities": 0
-    }
+    rows = df.values.tolist()
 
-    keyword_map = {
-        "sales": ["sales", "turnover", "revenue", "total income"],
-        "profit": ["net profit", "profit after tax", "pat"],
-        "inventory": ["inventory", "stock"],
-        "debtors": ["debtors", "receivables"],
-        "creditors": ["creditors", "payables"],
-        "current_assets": ["current assets"],
+    keywords = {
+        "sales": ["sales", "by sales", "sales account", "turnover"],
+        "profit": ["net profit", "to net profit"],
+        "closing_stock": ["closing stock"],
+        "debtors": ["sundry debtors"],
+        "creditors": ["sundry creditors"],
+        "current_assets": ["current asset"],
         "current_liabilities": ["current liabilities"]
     }
 
-    for _, row in df.iterrows():
+    result = {k: 0 for k in keywords.keys()}
+
+    for row in rows:
         row_lower = [str(x).lower() for x in row]
 
-        for key, keywords in keyword_map.items():
-            for keyword in keywords:
+        for key, word_list in keywords.items():
+            for word in word_list:
                 for i, cell in enumerate(row_lower):
-                    if keyword in cell:
-                        for j in range(i + 1, len(row_lower)):
-                            number = clean_number(row_lower[j])
+                    if word in cell:
+
+                        # Look for numeric in same row
+                        for value in row:
+                            number = clean_number(value)
                             if number > 0:
                                 result[key] = number
                                 break
@@ -66,38 +68,45 @@ def extract_from_dataframe(df):
     return result
 
 
+# ---------------------------------
+# FILE PARSER (MULTI-SHEET)
+# ---------------------------------
+
 async def parse_file(file: UploadFile):
+
     if not file:
         return {}
 
     content = await file.read()
     name = file.filename.lower()
-
-    combined_data = {}
+    final_data = {}
 
     try:
         if name.endswith(".xlsx") or name.endswith(".xls"):
+
             excel = pd.ExcelFile(io.BytesIO(content))
+
             for sheet in excel.sheet_names:
-                df = excel.parse(sheet)
-                data = extract_from_dataframe(df)
+                df = excel.parse(sheet, header=None)
+                data = extract_financial_data(df)
+
                 for k, v in data.items():
                     if v > 0:
-                        combined_data[k] = v
+                        final_data[k] = v
 
         elif name.endswith(".csv"):
-            df = pd.read_csv(io.BytesIO(content))
-            combined_data = extract_from_dataframe(df)
+            df = pd.read_csv(io.BytesIO(content), header=None)
+            final_data = extract_financial_data(df)
 
     except Exception as e:
         print("PARSE ERROR:", e)
 
-    return combined_data
+    return final_data
 
 
-# -------------------------------
+# ---------------------------------
 # ANALYSIS ENGINE
-# -------------------------------
+# ---------------------------------
 
 @app.get("/")
 def home():
@@ -114,48 +123,31 @@ async def analyze(
     bs_data = await parse_file(bs_file)
     pl_data = await parse_file(pl_file)
 
-    # Merge extracted data
     data = {**bs_data, **pl_data}
 
     sales = data.get("sales", 0)
     profit = data.get("profit", 0)
-    inventory = data.get("inventory", 0)
+    inventory = data.get("closing_stock", 0)
     debtors = data.get("debtors", 0)
     creditors = data.get("creditors", 0)
     current_assets = data.get("current_assets", inventory + debtors)
     current_liabilities = data.get("current_liabilities", creditors)
 
-    # -------------------------
     # Financial Calculations
-    # -------------------------
 
-    # Net Working Capital
     nwc = current_assets - current_liabilities
-
-    # Current Ratio
     current_ratio = (
         current_assets / current_liabilities
         if current_liabilities > 0 else 0
     )
 
-    # Working Capital Gap
     wc_gap = inventory + debtors - creditors
-
-    # MPBF (Tandon II)
     mpbf = max(0, (0.75 * wc_gap) - nwc)
-
-    # Turnover Method (20%)
     turnover_limit = 0.20 * sales
-
-    # Final WC Limit
     wc_limit = max(mpbf, turnover_limit)
-
-    # Agri Limit (example 30% of WC)
     agri_limit = 0.30 * wc_limit
 
-    # -------------------------
     # Risk Scoring
-    # -------------------------
 
     risk_score = 100
 
@@ -180,10 +172,6 @@ async def analyze(
         decision = "Reject"
     elif risk_score < 70:
         decision = "Review"
-
-    # -------------------------
-    # Final Response
-    # -------------------------
 
     return {
         "Sales": round(sales, 2),
