@@ -36,37 +36,51 @@ def extract_financial_data(df):
     df = df.fillna("")
     df = df.astype(str)
 
-    rows = df.values.tolist()
-
-    keywords = {
-        "sales": ["sales", "by sales", "sales account", "turnover"],
-        "profit": ["net profit", "to net profit"],
-        "closing_stock": ["closing stock"],
-        "debtors": ["sundry debtors"],
-        "creditors": ["sundry creditors"],
-        "current_assets": ["current asset"],
-        "current_liabilities": ["current liabilities"]
+    result = {
+        "sales": 0,
+        "profit": 0,
+        "closing_stock": 0,
+        "debtors": 0,
+        "creditors": 0,
+        "current_assets": 0,
+        "current_liabilities": 0
     }
 
-    result = {k: 0 for k in keywords.keys()}
+    for i in range(len(df)):
+        for j in range(len(df.columns)):
 
-    for row in rows:
-        row_lower = [str(x).lower() for x in row]
+            cell = str(df.iat[i, j]).lower()
 
-        for key, word_list in keywords.items():
-            for word in word_list:
-                for i, cell in enumerate(row_lower):
-                    if word in cell:
+            def get_right_value():
+                # Try next columns for numeric value
+                for k in range(j+1, len(df.columns)):
+                    val = clean_number(df.iat[i, k])
+                    if val > 0:
+                        return val
+                return 0
 
-                        # Look for numeric in same row
-                        for value in row:
-                            number = clean_number(value)
-                            if number > 0:
-                                result[key] = number
-                                break
+            if "sales" in cell or "turnover" in cell:
+                result["sales"] = get_right_value()
+
+            elif "net profit" in cell:
+                result["profit"] = get_right_value()
+
+            elif "closing stock" in cell:
+                result["closing_stock"] = get_right_value()
+
+            elif "sundry debtor" in cell:
+                result["debtors"] = get_right_value()
+
+            elif "sundry creditor" in cell:
+                result["creditors"] = get_right_value()
+
+            elif "current asset" in cell:
+                result["current_assets"] = get_right_value()
+
+            elif "current liabilities" in cell:
+                result["current_liabilities"] = get_right_value()
 
     return result
-
 
 # ---------------------------------
 # FILE PARSER (MULTI-SHEET)
