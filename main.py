@@ -1,171 +1,136 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-import pandas as pd
-import io
+import math
 
-app = FastAPI(title="Credit Engine vFinal")
+app = FastAPI(title="Agri / WC Calculator")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-def safe(v):
+# ---------------- SAFE PARSER ----------------
+
+def safe(value):
     try:
-        return float(v)
+        return float(value)
     except:
         return 0.0
 
-
-# ============================
-# CENTRAL RISK ENGINE
-# ============================
-
-def risk_engine(dscr, hygiene, wc, agri):
-    score = 0
-
-    # DSCR 40%
-    if dscr >= 1.5:
-        score += 40
-    elif dscr >= 1.25:
-        score += 30
-    elif dscr >= 1:
-        score += 20
-    else:
-        score += 10
-
-    # Banking hygiene 30%
-    score += hygiene * 0.30
-
-    # Eligibility strength 20%
-    if wc > 0:
-        score += 10
-    if agri > 0:
-        score += 10
-
-    # Cushion 10%
-    if wc > agri:
-        score += 10
-    else:
-        score += 5
-
-    return round(score)
-
-
-def rating(score):
-    if score >= 85: return "AAA"
-    if score >= 75: return "AA"
-    if score >= 65: return "A"
-    if score >= 55: return "BBB"
-    if score >= 45: return "BB"
-    return "B"
-
-
-# ============================
-# MAIN CALCULATION ENGINE
-# ============================
+# ---------------- MAIN ANALYSIS ----------------
 
 @app.post("/analyze")
-async def analyze(data: dict):
+async def analyze(payload: dict):
 
-    # Inputs
-    turnover = safe(data.get("turnover"))
-    inventory = safe(data.get("inventory"))
-    debtors = safe(data.get("debtors"))
-    creditors = safe(data.get("creditors"))
+    # ---------------- INPUTS ----------------
 
-    net_profit = safe(data.get("net_profit"))
-    depreciation = safe(data.get("depreciation"))
-    tax_paid = safe(data.get("tax_paid"))
-    monthly_emi = safe(data.get("monthly_emi"))
-    loan_required = safe(data.get("loan_required"))
-    undoc = safe(data.get("undocumented_income"))
+    turnover = safe(payload.get("turnover"))
+    inventory = safe(payload.get("inventory"))
+    debtors = safe(payload.get("debtors"))
+    creditors = safe(payload.get("creditors"))
 
-    hygiene = safe(data.get("hygiene_score"))
+    tl_profit = safe(payload.get("tl_profit"))
+    tl_dep = safe(payload.get("tl_depreciation"))
+    tl_emi = safe(payload.get("tl_monthly_emi"))
 
-    # ====================
-    # WORKING CAPITAL
-    # ====================
-    wc_turnover = turnover * 0.20
-    wcg = (inventory + debtors) - creditors
-    mpbf = wcg * 0.75 if wcg > 0 else 0
-    wc_final = min(wc_turnover, mpbf) if wc_turnover and mpbf else max(wc_turnover, mpbf)
+    ag_profit = safe(payload.get("ag_profit"))
+    ag_dep = safe(payload.get("ag_depreciation"))
+    ag_tax = safe(payload.get("ag_tax"))
+    ag_emi = safe(payload.get("ag_monthly_emi"))
+    loan_required = safe(payload.get("loan_required"))
+    undoc = safe(payload.get("undocumented_income"))
 
-    # ====================
-    # TERM LOAN
-    # ====================
-    cash_accrual = net_profit + depreciation
-    annual_emi = monthly_emi * 12
+    stress_wc = safe(payload.get("stress_wc", 20))
+    stress_tl = safe(payload.get("stress_tl", 20))
+    stress_agri = safe(payload.get("stress_agri", 14))
+
+    hygiene = safe(payload.get("hygiene_score", 80))
+
+    # ---------------- WORKING CAPITAL ----------------
+
+    wc_turnover = turnover * (stress_wc / 100)
+    mpbf = 0.75 * ((inventory + debtors) - creditors)
+    wc_limit = max(0, min(wc_turnover, mpbf))
+
+    # ---------------- TERM LOAN ----------------
+
+    cash_accrual = tl_profit + tl_dep
+    annual_emi = tl_emi * 12
     dscr = cash_accrual / annual_emi if annual_emi > 0 else 0
-    surplus = cash_accrual - annual_emi
-    tl_eligible = surplus * 6 if surplus > 0 else 0
 
-    # ====================
-    # AGRICULTURE (Your Logic)
-    # ====================
-    nca = net_profit + depreciation - tax_paid
+    tl_surplus = cash_accrual - annual_emi
+    tl_limit = max(0, tl_surplus * (stress_tl / 10))
+
+    # ---------------- AGRICULTURE ----------------
+
+    nca = ag_profit + ag_dep - ag_tax
     scaling = 0.70 if loan_required > 3000000 else 0.60
     scaled_income = nca * scaling
-    monthly_surplus = (scaled_income/12) - monthly_emi + ((undoc*0.42)/12)
-    agri_eligible = monthly_surplus / 0.14 if monthly_surplus > 0 else 0
 
-    # ====================
-    # RISK & RATING
-    # ====================
-    risk_score = risk_engine(dscr, hygiene, wc_final, agri_eligible)
-    internal_rating = rating(risk_score)
+    monthly_surplus = (scaled_income / 12) - ag_emi + ((undoc * 0.42) / 12)
+    agri_limit = monthly_surplus / (stress_agri / 100) if monthly_surplus > 0 else 0
 
-    final_limit = max(wc_final, tl_eligible, agri_eligible)
+    # ---------------- RISK ENGINE ----------------
 
-    return {
-        "wc": round(wc_final,2),
-        "mpbf": round(mpbf,2),
-        "dscr": round(dscr,2),
-        "tl_eligible": round(tl_eligible,2),
-        "agri_eligible": round(agri_eligible,2),
-        "risk_score": risk_score,
-        "rating": internal_rating,
-        "final_limit": round(final_limit,2)
-    }
+    score = 0
 
+    if wc_limit > 0:
+        score += 20
+    if tl_limit > 0:
+        score += 20
+    if agri_limit > 0:
+        score += 20
 
-# ============================
-# BANKING PERFIOS
-# ============================
+    if dscr > 1.5:
+        score += 20
+    elif dscr > 1.2:
+        score += 15
 
-@app.post("/banking")
-async def banking(file: UploadFile = File(...)):
+    score += hygiene * 0.2
+    risk_score = min(100, round(score))
 
-    content = await file.read()
+    # ---------------- RATING ----------------
 
-    if file.filename.lower().endswith(("xls","xlsx")):
-        df = pd.read_excel(io.BytesIO(content))
+    if risk_score >= 85:
+        rating = "AAA"
+    elif risk_score >= 75:
+        rating = "AA"
+    elif risk_score >= 65:
+        rating = "A"
+    elif risk_score >= 55:
+        rating = "BBB"
     else:
-        df = pd.read_csv(io.BytesIO(content))
+        rating = "BB"
 
-    df.columns = [str(c).lower() for c in df.columns]
+    # ---------------- CAM NARRATIVE ----------------
 
-    total_credit = 0
-    total_debit = 0
+    cam_narrative = f"""
+    The borrower’s working capital eligibility is assessed at ₹{round(wc_limit)} 
+    based on turnover stress method and MPBF evaluation.
 
-    for col in df.columns:
-        if "credit" in col or "cr" in col:
-            total_credit += pd.to_numeric(df[col], errors="coerce").fillna(0).sum()
-        if "debit" in col or "dr" in col:
-            total_debit += pd.to_numeric(df[col], errors="coerce").fillna(0).sum()
+    Term loan repayment capacity evaluated with DSCR of {round(dscr,2)} 
+    resulting in eligible term exposure of ₹{round(tl_limit)}.
 
-    bounce = df.astype(str).apply(
-        lambda r: r.str.contains("return|bounce|insufficient|dishonour", case=False).any(),
-        axis=1
-    ).sum()
+    Agriculture eligibility computed using NCA model with scaling factor {scaling} 
+    and stress factor {stress_agri}% giving final agri limit of ₹{round(agri_limit)}.
 
-    hygiene = 90 if bounce == 0 else 70 if bounce <= 3 else 50
+    Banking hygiene score considered at {hygiene}, leading to final internal rating {rating} 
+    with composite risk score {risk_score}.
+    """
 
     return {
-        "total_credit": round(total_credit,2),
-        "total_debit": round(total_debit,2),
-        "bounce_count": int(bounce),
-        "hygiene_score": hygiene
+        "wc_limit": round(wc_limit),
+        "tl_limit": round(tl_limit),
+        "agri_limit": round(agri_limit),
+        "risk_score": risk_score,
+        "rating": rating,
+        "cam_narrative": cam_narrative
     }
+
+
+@app.get("/")
+def health():
+    return {"status": "Agri / WC Calculator Running"}
