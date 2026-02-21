@@ -1,98 +1,80 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional
+import pandas as pd
+import io
+import re
 
 app = FastAPI(title="Agri / WC Calculator")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class CreditInput(BaseModel):
-    # WC
-    turnover: Optional[float] = 0
-    inventory: Optional[float] = 0
-    debtors: Optional[float] = 0
-    creditors: Optional[float] = 0
-
-    # TL
-    net_profit: Optional[float] = 0
-    depreciation: Optional[float] = 0
-    monthly_emi: Optional[float] = 0
-
-    # AGRI
-    tax_paid: Optional[float] = 0
-    undocumented_income: Optional[float] = 0
-    requested_loan: Optional[float] = 0
-
+def safe(v):
+    try:
+        return float(v)
+    except:
+        return 0.0
 
 @app.post("/analyze")
-def analyze(data: CreditInput):
+async def analyze(data: dict):
 
-    # Safe values
-    turnover = data.turnover or 0
-    inventory = data.inventory or 0
-    debtors = data.debtors or 0
-    creditors = data.creditors or 0
+    turnover = safe(data.get("turnover"))
+    inventory = safe(data.get("inventory"))
+    debtors = safe(data.get("debtors"))
+    creditors = safe(data.get("creditors"))
+    net_profit = safe(data.get("net_profit"))
+    depreciation = safe(data.get("depreciation"))
+    emi = safe(data.get("monthly_emi"))
+    tax_paid = safe(data.get("tax_paid"))
+    undoc = safe(data.get("undocumented_income"))
 
-    net_profit = data.net_profit or 0
-    depreciation = data.depreciation or 0
-    monthly_emi = data.monthly_emi or 0
+    # WC
+    wc_turnover = turnover * 0.20
+    wcg = (inventory + debtors) - creditors
+    wc_mpbf = wcg * 0.75 if wcg > 0 else 0
+    wc_final = min(wc_turnover, wc_mpbf) if wc_turnover and wc_mpbf else max(wc_turnover, wc_mpbf)
 
-    tax_paid = data.tax_paid or 0
-    undocumented = data.undocumented_income or 0
-    requested = data.requested_loan or 0
+    # DSCR
+    annual_emi = emi * 12
+    dscr = (net_profit + depreciation) / annual_emi if annual_emi > 0 else 0
 
-    # =========================
-    # WORKING CAPITAL (RBI)
-    # =========================
-    turnover_method = 0.20 * turnover
-
-    tca = inventory + debtors
-    ocl = creditors
-    wc_gap = tca - ocl
-    borrower_margin = 0.25 * tca
-    mpbf = max(0, wc_gap - borrower_margin)
-
-    wc_eligible = min(turnover_method, mpbf) if turnover_method and mpbf else max(turnover_method, mpbf)
-    current_ratio = (tca / ocl) if ocl else 0
-
-    # =========================
-    # TERM LOAN (DSCR)
-    # =========================
-    annual_installment = monthly_emi * 12
-    cash_accrual = net_profit + depreciation
-    dscr = (cash_accrual / annual_installment) if annual_installment else 0
-
-    # =========================
-    # AGRICULTURE (YOUR MODEL)
-    # =========================
+    # Agriculture
     nca = net_profit + depreciation - tax_paid
-    scaling = 0.70 if requested > 3000000 else 0.60
-    scaled_income = nca * scaling
-    adjusted_undoc = undocumented * 0.42
-
-    monthly_surplus = (scaled_income / 12) - monthly_emi + (adjusted_undoc / 12)
-    agri_eligible = (monthly_surplus / 0.14) if monthly_surplus > 0 else 0
-
-    # =========================
-    # FINAL
-    # =========================
-    candidates = [v for v in [wc_eligible, agri_eligible, requested] if v > 0]
-    final_recommendation = min(candidates) if candidates else 0
+    scaling = 0.70 if turnover > 3000000 else 0.60
+    scaled = nca * scaling
+    monthly_surplus = (scaled/12) - emi + ((undoc*0.42)/12)
+    agri_eligible = (monthly_surplus/0.14) if monthly_surplus > 0 else 0
 
     return {
-        "wc_eligible": round(wc_eligible, 2),
-        "mpbf": round(mpbf, 2),
-        "turnover_method": round(turnover_method, 2),
-        "current_ratio": round(current_ratio, 2),
-        "dscr": round(dscr, 2),
-        "agri_eligible": round(agri_eligible, 2),
-        "monthly_surplus": round(monthly_surplus, 2),
-        "final_recommendation": round(final_recommendation, 2)
+        "wc": round(wc_final,2),
+        "mpbf": round(wc_mpbf,2),
+        "dscr": round(dscr,2),
+        "agri": round(agri_eligible,2)
+    }
+
+@app.post("/banking")
+async def banking(file: UploadFile = File(...)):
+    content = await file.read()
+    df = pd.read_excel(io.BytesIO(content)) if file.filename.endswith(("xls","xlsx")) else pd.read_csv(io.BytesIO(content))
+
+    credit_cols = [c for c in df.columns if "credit" in c.lower()]
+    debit_cols = [c for c in df.columns if "debit" in c.lower()]
+
+    total_credit = df[credit_cols[0]].sum() if credit_cols else 0
+    bounce_count = df.astype(str).apply(lambda row: row.str.contains("return|bounce|insufficient|dishonour", case=False).any(), axis=1).sum()
+
+    months = 6
+    avg_monthly_credit = total_credit / months if months else 0
+
+    hygiene = 90 if bounce_count == 0 else 70 if bounce_count <= 3 else 50
+
+    return {
+        "total_credit": round(total_credit,2),
+        "avg_monthly_credit": round(avg_monthly_credit,2),
+        "bounce_count": int(bounce_count),
+        "hygiene_score": hygiene
     }
