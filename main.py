@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import io
@@ -14,172 +14,110 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------------------------
-# SMART NUMBER CLEANER
-# ---------------------------------
+# ---------------------------
+# BANK STATEMENT ANALYZER
+# ---------------------------
 
-def clean_number(value):
+def clean_number(val):
     try:
-        value = str(value)
-        value = re.sub(r"[^\d\.-]", "", value)
-        return float(value)
+        val = str(val).replace(",", "")
+        return float(re.findall(r"-?\d+\.?\d*", val)[0])
     except:
-        return 0.0
+        return 0
 
 
-# ---------------------------------
-# UNIVERSAL FINANCIAL PARSER
-# ---------------------------------
-
-def extract_financial_data(df):
-
-    df = df.fillna("")
-    df = df.astype(str)
-
-    result = {
-        "sales": 0,
-        "profit": 0,
-        "closing_stock": 0,
-        "debtors": 0,
-        "creditors": 0,
-        "current_assets": 0,
-        "current_liabilities": 0
-    }
-
-    for i in range(len(df)):
-        for j in range(len(df.columns)):
-
-            cell = str(df.iat[i, j]).lower()
-
-            def get_right_value():
-                # Try next columns for numeric value
-                for k in range(j+1, len(df.columns)):
-                    val = clean_number(df.iat[i, k])
-                    if val > 0:
-                        return val
-                return 0
-
-            if "sales" in cell or "turnover" in cell:
-                result["sales"] = get_right_value()
-
-            elif "net profit" in cell:
-                result["profit"] = get_right_value()
-
-            elif "closing stock" in cell:
-                result["closing_stock"] = get_right_value()
-
-            elif "sundry debtor" in cell:
-                result["debtors"] = get_right_value()
-
-            elif "sundry creditor" in cell:
-                result["creditors"] = get_right_value()
-
-            elif "current asset" in cell:
-                result["current_assets"] = get_right_value()
-
-            elif "current liabilities" in cell:
-                result["current_liabilities"] = get_right_value()
-
-    return result
-
-# ---------------------------------
-# FILE PARSER (MULTI-SHEET)
-# ---------------------------------
-
-async def parse_file(file: UploadFile):
+async def analyze_bank_statement(file: UploadFile):
 
     if not file:
         return {}
 
     content = await file.read()
-    name = file.filename.lower()
-    final_data = {}
 
-    try:
-        if name.endswith(".xlsx") or name.endswith(".xls"):
+    df = pd.read_excel(io.BytesIO(content), header=None)
 
-            excel = pd.ExcelFile(io.BytesIO(content))
+    total_credit = 0
+    balance_list = []
+    bounce_count = 0
 
-            for sheet in excel.sheet_names:
-                df = excel.parse(sheet, header=None)
-                data = extract_financial_data(df)
+    for row in df.values:
+        for cell in row:
+            value = clean_number(cell)
+            if value > 0:
+                total_credit += value
 
-                for k, v in data.items():
-                    if v > 0:
-                        final_data[k] = v
+            text = str(cell).lower()
+            if "bounce" in text or "return" in text:
+                bounce_count += 1
 
-        elif name.endswith(".csv"):
-            df = pd.read_csv(io.BytesIO(content), header=None)
-            final_data = extract_financial_data(df)
+            if "balance" in text:
+                balance_list.append(value)
 
-    except Exception as e:
-        print("PARSE ERROR:", e)
+    avg_balance = sum(balance_list) / len(balance_list) if balance_list else 0
 
-    return final_data
+    return {
+        "Total_Credit": total_credit,
+        "Avg_Balance": avg_balance,
+        "Bounce_Count": bounce_count
+    }
 
-
-# ---------------------------------
-# ANALYSIS ENGINE
-# ---------------------------------
-
-@app.get("/")
-def home():
-    return {"status": "Agri / WC Calculator Running"}
-
+# ---------------------------
+# MAIN ANALYSIS
+# ---------------------------
 
 @app.post("/analyze")
 async def analyze(
-    bs_file: UploadFile = File(...),
-    pl_file: UploadFile = File(...),
+    sales: float = Form(...),
+    net_profit: float = Form(...),
+    depreciation: float = Form(...),
+    inventory: float = Form(...),
+    debtors: float = Form(...),
+    creditors: float = Form(...),
+    emi: float = Form(...),
     bank_file: UploadFile = File(None)
 ):
 
-    bs_data = await parse_file(bs_file)
-    pl_data = await parse_file(pl_file)
+    # ---------------- Financial Calculations ----------------
 
-    data = {**bs_data, **pl_data}
-
-    sales = data.get("sales", 0)
-    profit = data.get("profit", 0)
-    inventory = data.get("closing_stock", 0)
-    debtors = data.get("debtors", 0)
-    creditors = data.get("creditors", 0)
-    current_assets = data.get("current_assets", inventory + debtors)
-    current_liabilities = data.get("current_liabilities", creditors)
-
-    # Financial Calculations
+    current_assets = inventory + debtors
+    current_liabilities = creditors
 
     nwc = current_assets - current_liabilities
-    current_ratio = (
-        current_assets / current_liabilities
-        if current_liabilities > 0 else 0
-    )
+    current_ratio = current_assets / current_liabilities if current_liabilities else 0
 
     wc_gap = inventory + debtors - creditors
     mpbf = max(0, (0.75 * wc_gap) - nwc)
+
     turnover_limit = 0.20 * sales
     wc_limit = max(mpbf, turnover_limit)
-    agri_limit = 0.30 * wc_limit
 
-    # Risk Scoring
+    agri_limit = (((net_profit * 0.60) / 12) - emi) / 0.14
+    agri_limit = max(0, agri_limit)
+
+    # ---------------- Banking Analysis ----------------
+
+    bank_data = await analyze_bank_statement(bank_file)
+
+    hygiene_score = 100
+    if bank_data.get("Bounce_Count", 0) > 2:
+        hygiene_score -= 30
+
+    if bank_data.get("Avg_Balance", 0) < emi * 2:
+        hygiene_score -= 20
+
+    # ---------------- Risk Scoring ----------------
 
     risk_score = 100
 
     if current_ratio < 1:
         risk_score -= 30
-    elif current_ratio < 1.33:
-        risk_score -= 15
-
-    if profit <= 0:
-        risk_score -= 25
-
-    if sales == 0:
-        risk_score -= 20
 
     if nwc < 0:
         risk_score -= 20
 
-    risk_score = max(0, risk_score)
+    if hygiene_score < 70:
+        risk_score -= 20
+
+    risk_score = max(risk_score, 0)
 
     decision = "Approve"
     if risk_score < 50:
@@ -188,12 +126,13 @@ async def analyze(
         decision = "Review"
 
     return {
-        "Sales": round(sales, 2),
-        "NWC": round(nwc, 2),
+        "NWC": nwc,
         "Current_Ratio": round(current_ratio, 2),
-        "MPBF": round(mpbf, 2),
-        "Working_Capital_Limit": round(wc_limit, 2),
-        "Agri_Limit": round(agri_limit, 2),
+        "MPBF": mpbf,
+        "Working_Capital_Limit": wc_limit,
+        "Agri_Limit": agri_limit,
+        "Banking_Summary": bank_data,
+        "Banking_Hygiene_Score": hygiene_score,
         "Risk_Score": risk_score,
         "Decision": decision
     }
