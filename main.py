@@ -1,8 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import pandas as pd
-import io
-import re
+from pydantic import BaseModel
+from typing import Optional
 
 app = FastAPI(title="Agri / WC Calculator")
 
@@ -14,125 +13,80 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------------------
-# BANK STATEMENT ANALYZER
-# ---------------------------
+# -----------------------------
+# REQUEST MODEL
+# -----------------------------
 
-def clean_number(val):
-    try:
-        val = str(val).replace(",", "")
-        return float(re.findall(r"-?\d+\.?\d*", val)[0])
-    except:
-        return 0
+class CreditInput(BaseModel):
+    # Financial
+    turnover: Optional[float] = 0
+    net_profit: Optional[float] = 0
+    depreciation: Optional[float] = 0
+    tax_paid: Optional[float] = 0
+    inventory: Optional[float] = 0
+    debtors: Optional[float] = 0
+    creditors: Optional[float] = 0
+    
+    # Term Loan
+    annual_installment: Optional[float] = 0
+    
+    # Agriculture
+    undocumented_income: Optional[float] = 0
+    existing_emi: Optional[float] = 0
+    requested_loan: Optional[float] = 0
 
-
-async def analyze_bank_statement(file: UploadFile):
-
-    if not file:
-        return {}
-
-    content = await file.read()
-
-    df = pd.read_excel(io.BytesIO(content), header=None)
-
-    total_credit = 0
-    balance_list = []
-    bounce_count = 0
-
-    for row in df.values:
-        for cell in row:
-            value = clean_number(cell)
-            if value > 0:
-                total_credit += value
-
-            text = str(cell).lower()
-            if "bounce" in text or "return" in text:
-                bounce_count += 1
-
-            if "balance" in text:
-                balance_list.append(value)
-
-    avg_balance = sum(balance_list) / len(balance_list) if balance_list else 0
-
-    return {
-        "Total_Credit": total_credit,
-        "Avg_Balance": avg_balance,
-        "Bounce_Count": bounce_count
-    }
-
-# ---------------------------
-# MAIN ANALYSIS
-# ---------------------------
+# -----------------------------
+# ENGINE
+# -----------------------------
 
 @app.post("/analyze")
-async def analyze(
-    sales: float = Form(...),
-    net_profit: float = Form(...),
-    depreciation: float = Form(...),
-    inventory: float = Form(...),
-    debtors: float = Form(...),
-    creditors: float = Form(...),
-    emi: float = Form(...),
-    bank_file: UploadFile = File(None)
-):
+def analyze(data: CreditInput):
 
-    # ---------------- Financial Calculations ----------------
+    # --- Working Capital (RBI) ---
+    turnover_wc = 0.20 * (data.turnover or 0)
 
-    current_assets = inventory + debtors
-    current_liabilities = creditors
+    tca = (data.inventory or 0) + (data.debtors or 0)
+    ocl = (data.creditors or 0)
+    wc_gap = tca - ocl
+    borrower_margin = 0.25 * tca
+    mpbf = max(0, wc_gap - borrower_margin)
 
-    nwc = current_assets - current_liabilities
-    current_ratio = current_assets / current_liabilities if current_liabilities else 0
+    wc_eligible = min(turnover_wc, mpbf) if turnover_wc and mpbf else max(turnover_wc, mpbf)
 
-    wc_gap = inventory + debtors - creditors
-    mpbf = max(0, (0.75 * wc_gap) - nwc)
+    current_ratio = (tca / ocl) if ocl else 0
 
-    turnover_limit = 0.20 * sales
-    wc_limit = max(mpbf, turnover_limit)
+    # --- Term Loan (DSCR RBI Principle) ---
+    cash_accrual = (data.net_profit or 0) + (data.depreciation or 0)
+    dscr = (cash_accrual / data.annual_installment) if data.annual_installment else 0
 
-    agri_limit = (((net_profit * 0.60) / 12) - emi) / 0.14
-    agri_limit = max(0, agri_limit)
+    # --- Agriculture (Your Model) ---
+    nca = (data.net_profit or 0) + (data.depreciation or 0) - (data.tax_paid or 0)
 
-    # ---------------- Banking Analysis ----------------
+    scaling = 0.70 if (data.requested_loan or 0) > 3000000 else 0.60
+    scaled_income = nca * scaling
 
-    bank_data = await analyze_bank_statement(bank_file)
+    adjusted_undoc = (data.undocumented_income or 0) * 0.42
 
-    hygiene_score = 100
-    if bank_data.get("Bounce_Count", 0) > 2:
-        hygiene_score -= 30
+    monthly_surplus = (scaled_income / 12) - (data.existing_emi or 0) + (adjusted_undoc / 12)
 
-    if bank_data.get("Avg_Balance", 0) < emi * 2:
-        hygiene_score -= 20
+    agri_eligible = (monthly_surplus / 0.14) if monthly_surplus > 0 else 0
 
-    # ---------------- Risk Scoring ----------------
-
-    risk_score = 100
-
-    if current_ratio < 1:
-        risk_score -= 30
-
-    if nwc < 0:
-        risk_score -= 20
-
-    if hygiene_score < 70:
-        risk_score -= 20
-
-    risk_score = max(risk_score, 0)
-
-    decision = "Approve"
-    if risk_score < 50:
-        decision = "Reject"
-    elif risk_score < 70:
-        decision = "Review"
+    # --- Final Recommendation ---
+    final_recommend = min(
+        x for x in [
+            wc_eligible,
+            agri_eligible,
+            data.requested_loan or 0
+        ] if x > 0
+    ) if any([wc_eligible, agri_eligible]) else 0
 
     return {
-        "NWC": nwc,
-        "Current_Ratio": round(current_ratio, 2),
-        "MPBF": mpbf,
-        "Working_Capital_Limit": wc_limit,
-        "Agri_Limit": agri_limit,
-        "Banking_Summary": bank_data,
-        "Banking_Hygiene_Score": hygiene_score,
-        "Risk_Score": risk_score,
-        "Decision": decision
+        "working_capital": round(wc_eligible,2),
+        "mpbf": round(mpbf,2),
+        "turnover_method": round(turnover_wc,2),
+        "current_ratio": round(current_ratio,2),
+        "dscr": round(dscr,2),
+        "agriculture_eligible": round(agri_eligible,2),
+        "monthly_surplus": round(monthly_surplus,2),
+        "final_recommendation": round(final_recommend,2)
     }
