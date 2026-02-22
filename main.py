@@ -1,14 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import wc, agriculture, banking, cam
-from core.database import engine, Base
+from services.wc_service import calculate_wc_logic
+from services.agriculture_service import calculate_agri_logic
 
-# Create database tables on startup
-Base.metadata.create_all(bind=engine)
+app = FastAPI()
 
-app = FastAPI(title="Credit Analysis Engine API")
-
-# Allow Frontend access (Adjust origins for production)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,12 +12,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include Routers
-app.include_router(wc.router, tags=["Working Capital"])
-app.include_router(agriculture.router, tags=["Agriculture"])
-app.include_router(banking.router, tags=["Banking"])
-app.include_router(cam.router, tags=["CAM Storage"])
+@app.post("/wc/calculate")
+async def wc_calc(data: dict):
+    # Safety: extract values or default 0
+    return calculate_wc_logic(
+        data.get("current_assets", 0),
+        data.get("current_liabilities", 0),
+        data.get("annual_sales", 0)
+    )
+
+@app.post("/agriculture/calculate")
+async def agri_calc(data: dict):
+    return calculate_agri_logic(
+        data.get("documented_income", 0),
+        data.get("tax", 0),
+        data.get("undocumented_income_monthly", 0),
+        data.get("emi_monthly", 0)
+    )
 
 @app.get("/")
-def health_check():
-    return {"status": "Online", "engine": "Gemini-V1-Credit"}
+def health():
+    return {"status": "Railway Backend Active"}
