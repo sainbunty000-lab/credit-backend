@@ -1,14 +1,15 @@
-def safe_divide(numerator, denominator, default=0):
+def safe_divide(n, d):
     try:
-        if not denominator or denominator == 0:
-            return default
-        return numerator / denominator
-    except (TypeError, ValueError):
-        return default
+        return n / d if d and d != 0 else 0
+    except:
+        return 0
 
 def safe_subtract(a, b):
     res = (a or 0) - (b or 0)
-    return max(0, res)  # Rule: Negative results -> 0
+    return max(0, res)
 
-def default_zero(value):
-    return value if value is not None else 0
+def default_zero(val):
+    try:
+        return float(val) if val else 0.0
+    except:
+        return 0.0
