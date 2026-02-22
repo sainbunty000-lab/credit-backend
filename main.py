@@ -1,27 +1,17 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from routers.wc_router import router as wc_router
-from core.database import engine
+from core.database import engine, Base
 from models.cam import CamReport
-from core.database import Base
+from routers import wc, agriculture, banking, cam
 
-app = FastAPI(
-    title="Credit Eligibility Backend",
-    version="3.0.0"
-)
+app = FastAPI(title="CAM Backend")
 
 Base.metadata.create_all(bind=engine)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.include_router(wc.router)
+app.include_router(agriculture.router)
+app.include_router(banking.router)
+app.include_router(cam.router)
 
 @app.get("/")
-def health():
+def root():
     return {"status": "Backend Running"}
-
-app.include_router(wc_router)
