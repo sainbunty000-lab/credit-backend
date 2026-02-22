@@ -1,15 +1,8 @@
 from fastapi import APIRouter
-from services.wc_service import (
-    calculate_working_capital_detailed,
-    calculate_agri_eligibility
-)
+from services.agriculture_service import calculate_agriculture
 
-router = APIRouter(prefix="/wc", tags=["Working Capital"])
+router = APIRouter(prefix="/agriculture", tags=["Agriculture"])
 
-@router.post("/detailed")
-def wc_detailed(data: dict):
-    return calculate_working_capital_detailed(data)
-
-@router.post("/agri")
-def agri_calculation(data: dict):
-    return calculate_agri_eligibility(data)
+@router.post("/calculate")
+def agri_calculate(data: dict):
+    return calculate_agriculture(data)
