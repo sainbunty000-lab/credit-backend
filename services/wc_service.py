@@ -1,24 +1,21 @@
-from utils.safe_math import safe_subtract, safe_divide
+from utils.safe_math import safe_subtract, default_zero
 
-def calculate_wc_eligibility(current_assets, current_liabilities, annual_sales):
-    ca = float(current_assets or 0)
-    cl = float(current_liabilities or 0)
-    sales = float(annual_sales or 0)
-
-    # NWC = CA - CL
+def calculate_wc_logic(ca, cl, sales):
+    ca, cl, sales = default_zero(ca), default_zero(cl), default_zero(sales)
+    
+    # Section 2: Method 1 - NWC
     nwc = safe_subtract(ca, cl)
+    nwc_limit = safe_subtract((0.75 * ca), cl)
     
-    # NWC Method: 0.75 * CA - CL
-    nwc_eligible = safe_subtract((0.75 * ca), cl)
+    # Section 2: Method 2 - Turnover
+    turnover_limit = 0.20 * sales
     
-    # Turnover Method: 0.20 * Sales
-    turnover_eligible = 0.20 * sales
+    is_eligible = nwc_limit > 0 or turnover_limit > 0
     
-    status = "Eligible" if (nwc_eligible > 0 or turnover_eligible > 0) else "Not Eligible"
-
     return {
         "nwc": round(nwc, 2),
-        "nwc_eligible": round(nwc_eligible, 2),
-        "turnover_eligible": round(turnover_eligible, 2),
-        "status": status
+        "nwc_eligible": round(nwc_limit, 2),
+        "turnover_eligible": round(turnover_limit, 2),
+        "status": "Eligible" if is_eligible else "Not Eligible",
+        "reason": "" if is_eligible else "Insufficient financial data or negative working capital"
     }
