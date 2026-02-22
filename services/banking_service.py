@@ -1,21 +1,22 @@
 from utils.safe_math import safe_divide, default_zero
 
-def analyze_banking(data: dict):
-
-    total_credit = default_zero(data.get("total_credit"))
-    total_debit = default_zero(data.get("total_debit"))
-    months = default_zero(data.get("months"))
-
-    avg_credit = safe_divide(total_credit, months)
-    avg_debit = safe_divide(total_debit, months)
-
-    net_surplus = avg_credit - avg_debit
-
-    status = "Healthy" if net_surplus > 0 else "Risk"
-
+def analyze_banking(transactions, months_count=1):
+    m = max(1, months_count)
+    credits = sum(default_zero(t.get('credit')) for t in transactions)
+    debits = sum(default_zero(t.get('debit')) for t in transactions)
+    
+    # Perfios Logic
+    avg_credit = credits / m
+    avg_debit = debits / m
+    surplus = avg_credit - avg_debit
+    
+    # EMI & Bounce detection logic (Simplified for summary)
+    bounces = [t for t in transactions if "return" in str(t.get('desc','')).lower()]
+    
     return {
-        "average_monthly_credit": round(avg_credit, 2),
-        "average_monthly_debit": round(avg_debit, 2),
-        "net_monthly_surplus": round(net_surplus, 2),
-        "status": status
+        "avg_monthly_credit": round(avg_credit, 2),
+        "avg_monthly_debit": round(avg_debit, 2),
+        "net_monthly_surplus": round(surplus, 2),
+        "bounce_count": len(bounces),
+        "hygiene": "Healthy" if len(bounces) == 0 and surplus > 0 else "Risky"
     }
