@@ -4,10 +4,9 @@ from routers.wc_router import router as wc_router
 
 app = FastAPI(
     title="Credit Eligibility Backend",
-    version="1.0.0"
+    version="3.0.0"
 )
 
-# CORS (for frontend later)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
