@@ -1,25 +1,19 @@
-from utils.safe_math import default_zero
+from utils.safe_math import safe_subtract, safe_divide
 
-def calculate_agriculture(data: dict):
-
-    total_income = default_zero(data.get("total_income"))
-    tax = default_zero(data.get("tax"))
-    monthly_undoc = default_zero(data.get("monthly_undocumented_income"))
-    monthly_emi = default_zero(data.get("monthly_emi"))
-
-    documented = total_income - tax
-    annual_undoc = monthly_undoc * 12
-    annual_emi = monthly_emi * 12
-
-    total_net = documented + annual_undoc - annual_emi
-    total_net = max(total_net, 0)
-
-    eligibility = total_net / 0.14 if total_net > 0 else 0
-    lakhs = eligibility / 100000
-
+def calculate_agri_eligibility(doc_income, tax, monthly_undoc, monthly_emi):
+    # Annual Conversions
+    net_doc_income = safe_subtract(doc_income, tax)
+    annual_undoc = float(monthly_undoc or 0) * 12
+    annual_emi = float(monthly_emi or 0) * 12
+    
+    # Total Net Income
+    total_net_income = safe_subtract((net_doc_income + annual_undoc), annual_emi)
+    
+    # Final Eligibility (5-year rule approx via 0.14 factor)
+    loan_eligibility = safe_divide(total_net_income, 0.14)
+    
     return {
-        "tenure_years": 5,
-        "eligibility_rupees": round(eligibility, 2),
-        "eligibility_lakhs_display": f"Eligibility (Lakhs) = {round(lakhs,2)} Lakhs",
-        "status": "Eligible" if eligibility > 0 else "Not Eligible"
+        "total_net_income": round(total_net_income, 2),
+        "loan_eligibility": round(loan_eligibility, 2),
+        "status": "Eligible" if loan_eligibility > 0 else "Not Eligible"
     }
