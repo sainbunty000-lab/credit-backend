@@ -1,24 +1,24 @@
-from utils.safe_math import default_zero
+from utils.safe_math import safe_subtract, safe_divide
 
-def calculate_wc(data: dict):
+def calculate_wc_eligibility(current_assets, current_liabilities, annual_sales):
+    ca = float(current_assets or 0)
+    cl = float(current_liabilities or 0)
+    sales = float(annual_sales or 0)
 
-    ca = default_zero(data.get("current_assets"))
-    cl = default_zero(data.get("current_liabilities"))
-    sales = default_zero(data.get("annual_sales"))
-
-    nwc = ca - cl
-    nwc_eligible = (0.75 * ca) - cl
+    # NWC = CA - CL
+    nwc = safe_subtract(ca, cl)
+    
+    # NWC Method: 0.75 * CA - CL
+    nwc_eligible = safe_subtract((0.75 * ca), cl)
+    
+    # Turnover Method: 0.20 * Sales
     turnover_eligible = 0.20 * sales
-
-    nwc_eligible = max(nwc_eligible, 0)
-    turnover_eligible = max(turnover_eligible, 0)
-
-    final = max(nwc_eligible, turnover_eligible)
+    
+    status = "Eligible" if (nwc_eligible > 0 or turnover_eligible > 0) else "Not Eligible"
 
     return {
         "nwc": round(nwc, 2),
         "nwc_eligible": round(nwc_eligible, 2),
         "turnover_eligible": round(turnover_eligible, 2),
-        "final_eligible": round(final, 2),
-        "status": "Eligible" if final > 0 else "Not Eligible"
+        "status": status
     }
