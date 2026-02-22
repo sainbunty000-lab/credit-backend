@@ -10,17 +10,15 @@ def calculate_wc(data: dict):
     nwc_eligible = (0.75 * ca) - cl
     turnover_eligible = 0.20 * sales
 
-    if nwc_eligible < 0:
-        nwc_eligible = 0
+    nwc_eligible = max(nwc_eligible, 0)
+    turnover_eligible = max(turnover_eligible, 0)
 
-    if turnover_eligible < 0:
-        turnover_eligible = 0
-
-    status = "Eligible" if max(nwc_eligible, turnover_eligible) > 0 else "Not Eligible"
+    final = max(nwc_eligible, turnover_eligible)
 
     return {
         "nwc": round(nwc, 2),
         "nwc_eligible": round(nwc_eligible, 2),
         "turnover_eligible": round(turnover_eligible, 2),
-        "status": status
+        "final_eligible": round(final, 2),
+        "status": "Eligible" if final > 0 else "Not Eligible"
     }
