@@ -1,5 +1,5 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import UploadFile, File
+from services.wc_parser import parse_financial_file
 from services.wc_service import calculate_wc_logic
 from services.agriculture_service import calculate_agri_logic
 
@@ -12,14 +12,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.post("/wc/upload")
+async def wc_upload(file: UploadFile = File(...)):
+    parsed = parse_financial_file(file.file, file.filename)
+    return parsed
+
 @app.post("/wc/calculate")
-async def wc_calc(data: dict):
-    # Safety: extract values or default 0
-    return calculate_wc_logic(
-        data.get("current_assets", 0),
-        data.get("current_liabilities", 0),
-        data.get("annual_sales", 0)
-    )
+async def wc_calculate(data: dict):
+    return calculate_wc_logic(data)
 
 @app.post("/agriculture/calculate")
 async def agri_calc(data: dict):
