@@ -21,6 +21,10 @@ async def wc_upload(file: UploadFile = File(...)):
 async def wc_calculate(data: dict):
     return calculate_wc_logic(data)
 
+@app.post("/wc/manual-calc")
+async def wc_manual_calc(data: dict):
+    return calculate_wc_logic(data)
+    
 @app.post("/agriculture/calculate")
 async def agri_calc(data: dict):
     return calculate_agri_logic(
