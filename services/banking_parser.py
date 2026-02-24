@@ -1,124 +1,127 @@
-from collections import defaultdict
-from datetime import datetime
-from utils.safe_math import default_zero
+import pandas as pd
+import pdfplumber
+import pytesseract
+
+from pdf2image import convert_from_bytes
+from io import BytesIO
 
 
-def analyze_banking(transactions, months_count=3):
+# ==========================================
+# MAIN PARSER
+# ==========================================
+def parse_banking_file(file, filename):
 
-    # ===============================
-    # PREPARE STRUCTURES
-    # ===============================
-    account_summary = defaultdict(lambda: {"credit": 0.0, "debit": 0.0})
-    monthly_breakdown = defaultdict(lambda: {"credit": 0.0, "debit": 0.0})
-
-    total_credit = 0.0
-    total_debit = 0.0
-    bounce_count = 0
-    fraud_flags = 0
-
-    # ===============================
-    # PROCESS TRANSACTIONS
-    # ===============================
-    for t in transactions:
-
-        credit = default_zero(t.get("credit"))
-        debit = default_zero(t.get("debit"))
-        desc = str(t.get("desc", "")).lower()
-        account = t.get("account", "Unknown")
-        date_str = t.get("date")
-
-        total_credit += credit
-        total_debit += debit
-
-        # Account summary
-        account_summary[account]["credit"] += credit
-        account_summary[account]["debit"] += debit
-
-        # Monthly grouping
-        month_key = extract_month(date_str)
-        if month_key:
-            monthly_breakdown[month_key]["credit"] += credit
-            monthly_breakdown[month_key]["debit"] += debit
-
-        # Bounce detection
-        if "return" in desc or "bounce" in desc:
-            bounce_count += 1
-
-        # Simple fraud pattern detection
-        if credit > 1000000:  # large abnormal credit
-            fraud_flags += 1
-
-    # ===============================
-    # CONSOLIDATED METRICS
-    # ===============================
-    months_count = max(1, months_count)
-
-    avg_monthly_credit = total_credit / months_count
-    avg_monthly_debit = total_debit / months_count
-    net_monthly_surplus = avg_monthly_credit - avg_monthly_debit
-
-    hygiene_score = calculate_hygiene_score(
-        net_monthly_surplus,
-        bounce_count,
-        fraud_flags
-    )
-
-    hygiene_status = classify_hygiene(hygiene_score)
-
-    return {
-        "consolidated": {
-            "avg_monthly_credit": round(avg_monthly_credit, 2),
-            "avg_monthly_debit": round(avg_monthly_debit, 2),
-            "net_monthly_surplus": round(net_monthly_surplus, 2),
-        },
-        "account_summary": dict(account_summary),
-        "monthly_breakdown": dict(monthly_breakdown),
-        "hygiene_score": hygiene_score,
-        "hygiene_status": hygiene_status,
-        "bounce_count": bounce_count,
-        "fraud_flags": fraud_flags,
-    }
-
-
-# =============================================
-# HYGIENE SCORE ENGINE
-# =============================================
-def calculate_hygiene_score(surplus, bounce_count, fraud_flags):
-
-    score = 100
-
-    # Negative surplus penalty
-    if surplus < 0:
-        score -= 40
-
-    # Bounce penalty
-    score -= bounce_count * 5
-
-    # Fraud penalty
-    score -= fraud_flags * 10
-
-    return max(0, min(score, 100))
-
-
-def classify_hygiene(score):
-
-    if score >= 80:
-        return "Strong"
-    elif score >= 60:
-        return "Moderate"
-    else:
-        return "Weak"
-
-
-# =============================================
-# MONTH EXTRACTOR
-# =============================================
-def extract_month(date_str):
     try:
-        if not date_str:
-            return None
-
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
-        return dt.strftime("%Y-%m")
+        file_bytes = file.read()
     except Exception:
-        return None
+        file_bytes = file
+
+    filename = filename.lower()
+
+    # ===============================
+    # CSV
+    # ===============================
+    if filename.endswith(".csv"):
+        df = pd.read_csv(BytesIO(file_bytes))
+        return normalize_dataframe(df)
+
+    # ===============================
+    # XLSX
+    # ===============================
+    elif filename.endswith(".xlsx"):
+        df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
+        return normalize_dataframe(df)
+
+    # ===============================
+    # XLS
+    # ===============================
+    elif filename.endswith(".xls"):
+        df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
+        return normalize_dataframe(df)
+
+    # ===============================
+    # PDF
+    # ===============================
+    elif filename.endswith(".pdf"):
+        return parse_pdf(file_bytes)
+
+    else:
+        raise ValueError("Unsupported file format")
+
+
+# ==========================================
+# PDF PARSER (Text + OCR Fallback)
+# ==========================================
+def parse_pdf(file_bytes):
+
+    text_data = ""
+
+    # Try normal text extraction first
+    try:
+        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+            for page in pdf.pages:
+                text_data += page.extract_text() or ""
+    except Exception:
+        pass
+
+    # If empty → OCR fallback
+    if not text_data.strip():
+        images = convert_from_bytes(file_bytes)
+        for img in images:
+            text_data += pytesseract.image_to_string(img)
+
+    return extract_transactions_from_text(text_data)
+
+
+# ==========================================
+# TEXT → TRANSACTIONS
+# ==========================================
+def extract_transactions_from_text(text):
+
+    lines = text.split("\n")
+    transactions = []
+
+    for line in lines:
+        parts = line.split()
+
+        # Very basic pattern detection:
+        # Date Credit Debit
+        if len(parts) >= 3:
+            try:
+                date = parts[0]
+                credit = float(parts[-2].replace(",", ""))
+                debit = float(parts[-1].replace(",", ""))
+
+                transactions.append({
+                    "date": date,
+                    "credit": credit,
+                    "debit": debit,
+                    "desc": " ".join(parts[1:-2]),
+                    "account": "PDF Account"
+                })
+            except:
+                continue
+
+    return transactions
+
+
+# ==========================================
+# NORMALIZE CSV/XLSX
+# ==========================================
+def normalize_dataframe(df):
+
+    df.columns = [c.strip().lower() for c in df.columns]
+
+    transactions = []
+
+    for _, row in df.iterrows():
+
+        transactions.append({
+            "date": row.get("date"),
+            "credit": float(row.get("credit", 0) or 0),
+            "debit": float(row.get("debit", 0) or 0),
+            "desc": row.get("desc", ""),
+            "account": row.get("account", "Uploaded Account")
+        })
+
+    return transactions
