@@ -43,6 +43,24 @@ async def agri_calc(data: dict):
         data.get("emi_monthly", 0)
     )
 
+@app.post("/banking/upload")
+async def banking_upload(file: UploadFile = File(...)):
+    try:
+        parsed = parse_financial_file(file.file, file.filename)
+        return parsed
+    except Exception as e:
+        return {
+            "error": "Banking file parsing failed",
+            "message": str(e)
+        }
+
+@app.post("/banking/analyze")
+async def banking_analyze(data: dict):
+    transactions = data.get("transactions", [])
+    months_count = data.get("months_count", 1)
+
+    return analyze_banking(transactions, months_count)
+
 @app.get("/")
 def health():
     return {"status": "Railway Backend Active"}
