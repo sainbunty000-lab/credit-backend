@@ -2,12 +2,15 @@ import pandas as pd
 import pdfplumber
 import pytesseract
 from pdf2image import convert_from_bytes
+from io import BytesIO
 from services.accounting_dictionary import ACCOUNTING_KEYWORDS
 
 
 def parse_financial_file(file, filename):
 
-    # Safe handling of UploadFile or raw bytes
+    # -----------------------------------
+    # Safe file reading (UploadFile / bytes)
+    # -----------------------------------
     try:
         file_bytes = file.read()
     except Exception:
@@ -16,88 +19,124 @@ def parse_financial_file(file, filename):
     filename = filename.lower()
     result = {}
 
-    # -----------------------------
-    # CSV / Excel
-    # -----------------------------
+    # ===================================
+    # CSV
+    # ===================================
     if filename.endswith(".csv"):
-        df = pd.read_csv(pd.io.common.BytesIO(file_bytes))
 
-    # -----------------------------
-# CSV
-# -----------------------------
-if filename.endswith(".csv"):
-    df = pd.read_csv(pd.io.common.BytesIO(file_bytes))
+        df = pd.read_csv(BytesIO(file_bytes))
 
-# -----------------------------
-# XLSX
-# -----------------------------
-elif filename.endswith(".xlsx"):
-    df = pd.read_excel(
-        pd.io.common.BytesIO(file_bytes),
-        engine="openpyxl"
-    )
+        return extract_from_dataframe(df)
 
-# -----------------------------
-# XLS
-# -----------------------------
+    # ===================================
+    # XLSX
+    # ===================================
+    elif filename.endswith(".xlsx"):
 
+        df = pd.read_excel(
+            BytesIO(file_bytes),
+            engine="openpyxl"
+        )
+
+        return extract_from_dataframe(df)
+
+    # ===================================
+    # XLS
+    # ===================================
+    elif filename.endswith(".xls"):
+
+        df = pd.read_excel(
+            BytesIO(file_bytes),
+            engine="xlrd"
+        )
+
+        return extract_from_dataframe(df)
+
+    # ===================================
+    # PDF (Text + OCR fallback)
+    # ===================================
     elif filename.endswith(".pdf"):
 
+        text = ""
+
+        # Try text-based extraction first
         try:
-            text = ""
-
-            with pdfplumber.open(pd.io.common.BytesIO(file_bytes)) as pdf:
+            with pdfplumber.open(BytesIO(file_bytes)) as pdf:
                 for page in pdf.pages:
-                    text += page.extract_text() or ""
-
-            # If text is empty → OCR fallback
-            if not text.strip():
-                images = convert_from_bytes(file_bytes)
-                for img in images:
-                    text += pytesseract.image_to_string(img)
-
+                    extracted = page.extract_text()
+                    if extracted:
+                        text += extracted
         except Exception:
-            # OCR direct fallback
+            pass
+
+        # If no text found → OCR fallback
+        if not text.strip():
             images = convert_from_bytes(file_bytes)
-            text = ""
             for img in images:
                 text += pytesseract.image_to_string(img)
 
-        lines = text.split("\n")
+        if not text.strip():
+            raise ValueError("No readable text found in PDF")
 
-        for line in lines:
-            line_lower = line.lower().replace(",", "")
-
-            for key, words in ACCOUNTING_KEYWORDS.items():
-                for word in words:
-                    if word in line_lower:
-                        numbers = [
-                            float(s)
-                            for s in line_lower.split()
-                            if s.replace(".", "", 1).isdigit()
-                        ]
-                        if numbers:
-                            result[key] = numbers[-1]
-
-        return result
+        return extract_from_text(text)
 
     else:
         raise ValueError("Unsupported file type")
 
-    # -----------------------------
-    # CSV / Excel parsing
-    # -----------------------------
+
+# ==========================================================
+# Extract from DataFrame
+# ==========================================================
+def extract_from_dataframe(df):
+
+    result = {}
+
     for _, row in df.iterrows():
+
         row_text = " ".join(str(v).lower() for v in row.values)
 
-        for key, words in ACCOUNTING_KEYWORDS.items():
-            for word in words:
-                if word in row_text:
+        for key, keywords in ACCOUNTING_KEYWORDS.items():
+
+            for keyword in keywords:
+
+                if keyword in row_text:
+
                     numbers = [
                         float(str(v))
                         for v in row.values
                         if str(v).replace(".", "", 1).isdigit()
                     ]
+
+                    if numbers:
+                        result[key] = numbers[-1]
+
+    return result
+
+
+# ==========================================================
+# Extract from raw text (PDF)
+# ==========================================================
+def extract_from_text(text):
+
+    result = {}
+    lines = text.split("\n")
+
+    for line in lines:
+
+        clean_line = line.lower().replace(",", "")
+
+        for key, keywords in ACCOUNTING_KEYWORDS.items():
+
+            for keyword in keywords:
+
+                if keyword in clean_line:
+
+                    numbers = [
+                        float(word)
+                        for word in clean_line.split()
+                        if word.replace(".", "", 1).isdigit()
+                    ]
+
                     if numbers:
                         result[key] = numbers[-1]
 
