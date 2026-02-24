@@ -20,3 +20,11 @@ def calculate_agri_logic(doc_inc, tax, undoc_m, emi_m):
         "emi_ratio": round(emi_ratio, 2),
         "status": "Eligible" if eligibility > 0 else "Not Eligible"
     }
+
+def calculate_risk_band(emi_ratio):
+    if emi_ratio < 30:
+        return "Low Risk"
+    elif emi_ratio < 45:
+        return "Moderate Risk"
+    else:
+        return "High Risk"
