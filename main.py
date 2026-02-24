@@ -10,6 +10,7 @@ from services.banking_parser import parse_banking_file
 app = FastAPI(
     title="WC / Agri Calculator (Dhanush)",
     version="1.0.0"
+)
 
 app.add_middleware(
     CORSMiddleware,
