@@ -53,11 +53,6 @@ async def banking_upload(file: UploadFile = File(...)):
     try:
         parsed = parse_financial_file(file.file, file.filename)
         return parsed
-    except Exception as e:
-        return {
-            "error": "Banking file parsing failed",
-            "message": str(e)
-        }
 
 @app.post("/banking/analyze")
 async def banking_analyze(data: dict):
