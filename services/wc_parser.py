@@ -40,11 +40,7 @@ elif filename.endswith(".xlsx"):
 # -----------------------------
 # XLS
 # -----------------------------
-elif filename.endswith(".xls"):
-    df = pd.read_excel(
-        pd.io.common.BytesIO(file_bytes),
-        engine="xlrd"
-    )
+
     elif filename.endswith(".pdf"):
 
         try:
