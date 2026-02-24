@@ -19,32 +19,26 @@ def parse_financial_file(file_bytes, filename):
     elif filename.endswith(".xlsx") or filename.endswith(".xls"):
         df = pd.read_excel(io.BytesIO(file_bytes))
     elif filename.endswith(".pdf"):
-        text = ""
-        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            for page in pdf.pages:
-                text += page.extract_text() + "\n"
+    text = ""
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            extracted = page.extract_text()
+            if extracted:
+                text += extracted + "\n"
 
-        lines = text.split("\n")
-        data = []
-        for line in lines:
-            parts = line.split()
-            if len(parts) >= 2:
-                label = " ".join(parts[:-1])
-                try:
-                    value = float(parts[-1].replace(",", ""))
-                    data.append({"label": label, "value": value})
-                except:
-                    continue
-        df = pd.DataFrame(data)
-    else:
-        raise ValueError("Unsupported format")
+    if not text:
+        raise ValueError("No readable text found in PDF")
 
-    result = {}
-    for _, row in df.iterrows():
-        label = str(row[0])
-        value = float(row[1])
-        matched = match_keywords(label)
-        if matched:
-            result[matched] = value
+    lines = text.split("\n")
+    data = []
 
-    return result
+    for line in lines:
+        line_clean = line.lower().replace(",", "")
+        for key, words in ACCOUNTING_KEYWORDS.items():
+            for w in words:
+                if w in line_clean:
+                    numbers = [float(s) for s in line_clean.split() if s.replace('.', '', 1).isdigit()]
+                    if numbers:
+                        data.append({"label": key, "value": numbers[-1]})
+
+    return {item["label"]: item["value"] for item in data}
