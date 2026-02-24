@@ -16,9 +16,16 @@ app.add_middleware(
 
 @app.post("/wc/upload")
 async def wc_upload(file: UploadFile = File(...)):
-    file_bytes = await file.read()
-    return parse_financial_file(file_bytes, file.filename)
-
+    try:
+        file_bytes = await file.read()
+        parsed = parse_financial_file(file_bytes, file.filename)
+        return parsed
+    except Exception as e:
+        return {
+            "error": "Parsing failed",
+            "message": str(e)
+        }
+        
 @app.post("/wc/calculate")
 async def wc_calculate(data: dict):
     return calculate_wc_logic(data)
