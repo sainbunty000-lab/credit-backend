@@ -7,9 +7,13 @@ from services.accounting_dictionary import ACCOUNTING_KEYWORDS
 
 def parse_financial_file(file, filename):
 
-    file_bytes = file.read()
-    filename = filename.lower()
+    # Safe handling of UploadFile or raw bytes
+    try:
+        file_bytes = file.read()
+    except Exception:
+        file_bytes = file
 
+    filename = filename.lower()
     result = {}
 
     # -----------------------------
