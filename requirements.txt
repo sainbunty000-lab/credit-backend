@@ -1,10 +1,11 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pandas
 pdfplumber
 pytesseract
 pdf2image
 Pillow
 openpyxl
-python-multipart
 xlrd
+python-multipart
+python-dotenv
