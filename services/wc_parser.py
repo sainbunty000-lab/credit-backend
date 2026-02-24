@@ -3,7 +3,7 @@ import pdfplumber
 import pytesseract
 from pdf2image import convert_from_bytes
 from io import BytesIO
-from services.accounting_dictionary import ACCOUNTING_KEYWORDS
+from services.accounting_dictionary import accounting_keywords
 
 
 def parse_financial_file(file, filename):
