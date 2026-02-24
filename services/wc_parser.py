@@ -22,15 +22,29 @@ def parse_financial_file(file, filename):
     if filename.endswith(".csv"):
         df = pd.read_csv(pd.io.common.BytesIO(file_bytes))
 
-    elif filename.endswith(".xlsx"):
-    df = pd.read_excel(pd.io.common.BytesIO(file_bytes), engine="openpyxl")
+    # -----------------------------
+# CSV
+# -----------------------------
+if filename.endswith(".csv"):
+    df = pd.read_csv(pd.io.common.BytesIO(file_bytes))
 
+# -----------------------------
+# XLSX
+# -----------------------------
+elif filename.endswith(".xlsx"):
+    df = pd.read_excel(
+        pd.io.common.BytesIO(file_bytes),
+        engine="openpyxl"
+    )
+
+# -----------------------------
+# XLS
+# -----------------------------
 elif filename.endswith(".xls"):
-    df = pd.read_excel(pd.io.common.BytesIO(file_bytes), engine="xlrd")
-
-    # -----------------------------
-    # PDF (Text-Based)
-    # -----------------------------
+    df = pd.read_excel(
+        pd.io.common.BytesIO(file_bytes),
+        engine="xlrd"
+    )
     elif filename.endswith(".pdf"):
 
         try:
