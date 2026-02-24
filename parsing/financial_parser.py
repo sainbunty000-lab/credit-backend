@@ -1,4 +1,4 @@
-from parsing.accounting_dictionary import ACCOUNTING_MAP
+from services.accounting_keywords import ACCOUNTING_MAP
 
 def normalize_text(text):
     """Clean text for better matching."""
