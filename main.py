@@ -1,4 +1,6 @@
-from fastapi import UploadFile, File
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+
 from services.wc_parser import parse_financial_file
 from services.wc_service import calculate_wc_logic
 from services.agriculture_service import calculate_agri_logic
