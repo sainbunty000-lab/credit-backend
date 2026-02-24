@@ -2,15 +2,19 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
 from services.wc_parser import parse_financial_file
-from services.banking_service import parse_banking_file
 from services.wc_service import calculate_wc_logic
 from services.agriculture_service import calculate_agri_logic
+from services.banking_service import analyze_banking
+from services.banking_parser import parse_banking_file
 
-app = FastAPI()
+app = FastAPI(
+    title="WC / Agri Calculator (Dhanush)",
+    version="1.0.0"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
