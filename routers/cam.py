@@ -3,6 +3,9 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from models.cam import CAMReport
 from datetime import datetime
+from services.pdf_generator import generate_cam_pdf
+from fastapi.responses import FileResponse
+import os
 
 router = APIRouter(prefix="/cam", tags=["CAM Management"])
 
@@ -48,15 +51,20 @@ def update_report(report_id: int, data: dict, db: Session = Depends(get_db)):
 
 
 # ---------------- GET ONE ----------------
-@router.get("/{report_id}")
-def get_report(report_id: int, db: Session = Depends(get_db)):
+@router.get("/pdf/{report_id}")
+def download_pdf(report_id: int, db: Session = Depends(get_db)):
     report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
 
     if not report:
-        raise HTTPException(status_code=404, detail="Report Not Found")
+        raise HTTPException(status_code=404, detail="Not found")
 
-    return report
+    filename = generate_cam_pdf(report.__dict__, f"CAM_{report_id}.pdf")
 
+    return FileResponse(
+        path=f"downloads/{filename}",
+        media_type="application/pdf",
+        filename=filename,
+    )
 
 # ---------------- GET ALL ----------------
 @router.get("/all")
