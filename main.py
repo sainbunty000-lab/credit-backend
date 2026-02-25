@@ -8,8 +8,8 @@ from services.banking_service import analyze_banking
 from services.banking_parser import parse_banking_file
 
 app = FastAPI(
-    title="WC / Agri Calculator (Dhanush)",
-    version="1.0.0"
+    title="WC / Agri Calculator",
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -20,57 +20,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
- @app.post("/wc/upload")
+
+# ==========================
+# WORKING CAPITAL UPLOAD
+# ==========================
+
+@app.post("/wc/upload")
 async def wc_upload(file: UploadFile = File(...)):
     try:
         file_bytes = await file.read()
 
-        # 1️⃣ Parse file
         parsed_data = parse_financial_file(file_bytes, file.filename)
-
-        # 2️⃣ Run WC calculations
         calculations = calculate_wc_logic(parsed_data)
 
-        # 3️⃣ Merge into ONE clean response
-        response = {
+        return {
             **parsed_data,
             **calculations,
-            "analysis_type": "working_capital",
-            "success": True
-        }
-
-        return response
-
-    except Exception as e:
-        return {
-            "success": False,
-            "error": "WC Parsing Failed",
-            "message": str(e)
-        }
-        
-@app.post("/wc/calculate")
-async def wc_calculate(data: dict):
-    try:
-        result = calculate_wc_logic(data)
-
-        return {
-            **data,
-            **result,
-            "analysis_type": "manual_working_capital",
             "success": True
         }
 
     except Exception as e:
         return {
             "success": False,
-            "error": "Manual Calculation Failed",
-            "message": str(e)
+            "error": str(e)
         }
+
+
+# ==========================
+# WORKING CAPITAL MANUAL
+# ==========================
 
 @app.post("/wc/manual-calc")
 async def wc_manual_calc(data: dict):
-    return calculate_wc_logic(data)
-    
+    try:
+        result = calculate_wc_logic(data)
+        return {
+            **data,
+            **result,
+            "success": True
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# ==========================
+# AGRICULTURE
+# ==========================
+
 @app.post("/agriculture/calculate")
 async def agri_calc(data: dict):
     return calculate_agri_logic(
@@ -80,24 +79,31 @@ async def agri_calc(data: dict):
         data.get("emi_monthly", 0)
     )
 
+
+# ==========================
+# BANKING UPLOAD
+# ==========================
+
 @app.post("/banking/upload")
 async def banking_upload(file: UploadFile = File(...)):
     try:
         parsed = parse_banking_file(file.file, file.filename)
         return {"transactions": parsed}
     except Exception as e:
-        return {
-            "error": "Banking file parsing failed",
-            "message": str(e)
-        }
+        return {"error": str(e)}
+
 
 @app.post("/banking/analyze")
 async def banking_analyze(data: dict):
     transactions = data.get("transactions", [])
     months_count = data.get("months_count", 1)
-
     return analyze_banking(transactions, months_count)
+
+
+# ==========================
+# HEALTH CHECK
+# ==========================
 
 @app.get("/")
 def health():
-    return {"status": "Railway Backend Active"}
+    return {"status": "Backend Active"}
