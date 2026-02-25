@@ -20,23 +20,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/wc/upload")
+ @app.post("/wc/upload")
 async def wc_upload(file: UploadFile = File(...)):
     try:
         file_bytes = await file.read()
-        # 1. Get the parsed numbers from the document
+
+        # 1️⃣ Parse file
         parsed_data = parse_financial_file(file_bytes, file.filename)
-        
-        # 2. Immediately run the math logic on these numbers
+
+        # 2️⃣ Run WC calculations
         calculations = calculate_wc_logic(parsed_data)
-        
-        # 3. Return BOTH so the frontend can fill the boxes AND show the charts
-        return {
-            "extracted_values": parsed_data,
-            "calculations": calculations
+
+        # 3️⃣ Merge into ONE clean response
+        response = {
+            **parsed_data,
+            **calculations,
+            "analysis_type": "working_capital",
+            "success": True
         }
+
+        return response
+
     except Exception as e:
-        return {"error": "Parsing failed", "message": str(e)}
+        return {
+            "success": False,
+            "error": "WC Parsing Failed",
+            "message": str(e)
+        }
         
 @app.post("/wc/calculate")
 async def wc_calculate(data: dict):
