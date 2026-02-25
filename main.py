@@ -24,13 +24,19 @@ app.add_middleware(
 async def wc_upload(file: UploadFile = File(...)):
     try:
         file_bytes = await file.read()
-        parsed = parse_financial_file(file_bytes, file.filename)
-        return parsed
-    except Exception as e:
+        # 1. Get the parsed numbers from the document
+        parsed_data = parse_financial_file(file_bytes, file.filename)
+        
+        # 2. Immediately run the math logic on these numbers
+        calculations = calculate_wc_logic(parsed_data)
+        
+        # 3. Return BOTH so the frontend can fill the boxes AND show the charts
         return {
-            "error": "Parsing failed",
-            "message": str(e)
+            "extracted_values": parsed_data,
+            "calculations": calculations
         }
+    except Exception as e:
+        return {"error": "Parsing failed", "message": str(e)}
         
 @app.post("/wc/calculate")
 async def wc_calculate(data: dict):
