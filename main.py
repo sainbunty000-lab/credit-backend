@@ -50,7 +50,22 @@ async def wc_upload(file: UploadFile = File(...)):
         
 @app.post("/wc/calculate")
 async def wc_calculate(data: dict):
-    return calculate_wc_logic(data)
+    try:
+        result = calculate_wc_logic(data)
+
+        return {
+            **data,
+            **result,
+            "analysis_type": "manual_working_capital",
+            "success": True
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": "Manual Calculation Failed",
+            "message": str(e)
+        }
 
 @app.post("/wc/manual-calc")
 async def wc_manual_calc(data: dict):
