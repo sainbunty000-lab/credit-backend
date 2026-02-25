@@ -76,9 +76,10 @@ async def agri_calc(data: dict):
         data.get("documented_income", 0),
         data.get("tax", 0),
         data.get("undocumented_income_monthly", 0),
-        data.get("emi_monthly", 0)
+        data.get("emi_monthly", 0),
+        data.get("tenure_years", 5),
+        data.get("interest_rate", 12)
     )
-
 
 # ==========================
 # BANKING UPLOAD
