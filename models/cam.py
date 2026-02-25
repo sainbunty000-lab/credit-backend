@@ -1,14 +1,14 @@
 from sqlalchemy import Column, Integer, String, JSON, DateTime
-from sqlalchemy.sql import func
 from core.database import Base
+from datetime import datetime
 
 class CAMReport(Base):
     __tablename__ = "cam_reports"
 
     id = Column(Integer, primary_key=True, index=True)
     customer_name = Column(String, nullable=False)
-    wc_data_json = Column(JSON, nullable=True)
-    agri_data_json = Column(JSON, nullable=True)
-    banking_data_json = Column(JSON, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
-    last_modified = Column(DateTime, onupdate=func.now())
+    wc_data = Column(JSON, default={})
+    agri_data = Column(JSON, default={})
+    banking_data = Column(JSON, default={})
+    status = Column(String, default="Draft")
+    created_at = Column(DateTime, default=datetime.utcnow)
