@@ -11,14 +11,13 @@ def calculate_wc_logic(data):
     cogs = float(data.get("cogs", 0))
     bank_credit = float(data.get("bank_credit", 0))
 
-    nwc = ca - cl
-    current_ratio = ca / cl if cl else 0
-    quick_ratio = (ca - inventory) / cl if cl else 0
-    wc_turnover = sales / nwc if nwc else 0
-
-    inventory_days = (inventory / cogs) * 365 if cogs else 0
-    receivable_days = (receivables / sales) * 365 if sales else 0
-    payable_days = (payables / cogs) * 365 if cogs else 0
+    nwc = safe_subtract(ca, cl)
+    current_ratio = safe_divide(ca, cl)
+quick_ratio = safe_divide(ca - inventory, cl)
+wc_turnover = safe_divide(sales, nwc)
+inventory_days = safe_divide(inventory, cogs) * 365
+receivable_days = safe_divide(receivables, sales) * 365
+payable_days = safe_divide(payables, cogs) * 365
 
     operating_cycle = inventory_days + receivable_days
     gap_days = operating_cycle - payable_days
