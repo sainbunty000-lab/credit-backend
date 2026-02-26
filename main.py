@@ -46,10 +46,10 @@ async def wc_upload_dual(
         calculations = calculate_wc_logic(combined_data)
 
         return {
-            "extracted_values": combined_data,
-            "calculations": calculations,
-            "success": True
-        }
+    **combined_data,
+    **calculations,
+    "success": True
+}
 
     except Exception as e:
         return {
