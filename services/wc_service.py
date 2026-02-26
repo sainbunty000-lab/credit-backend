@@ -1,21 +1,54 @@
 from utils.safe_math import safe_divide, safe_subtract, default_zero
-
+import math
 
 def calculate_wc_logic(data):
 
-    # ============================
-    # INPUT EXTRACTION
-    # ============================
     ca = default_zero(data.get("current_assets"))
     cl = default_zero(data.get("current_liabilities"))
     inventory = default_zero(data.get("inventory"))
     receivables = default_zero(data.get("receivables"))
     payables = default_zero(data.get("payables"))
-    other_ca = default_zero(data.get("other_current_assets"))
-    other_cl = default_zero(data.get("other_current_liabilities"))
     sales = default_zero(data.get("annual_sales"))
     cogs = default_zero(data.get("cogs"))
     bank_credit = default_zero(data.get("bank_credit"))
+
+    nwc = ca - cl
+
+    current_ratio = safe_divide(ca, cl)
+    quick_ratio = safe_divide((ca - inventory), cl)
+    wc_turnover = safe_divide(sales, nwc)
+
+    inventory_days = safe_divide(inventory, cogs) * 365
+    receivable_days = safe_divide(receivables, sales) * 365
+    payable_days = safe_divide(payables, cogs) * 365
+
+    operating_cycle = inventory_days + receivable_days
+    gap_days = operating_cycle - payable_days
+
+    drawing_power = (receivables * 0.75) + (inventory * 0.5) - bank_credit
+
+    liquidity_score = 90 if current_ratio >= 2 else 70 if current_ratio >= 1.5 else 50
+
+    # Prevent JSON errors (remove NaN / inf)
+    def clean(value):
+        if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+            return 0
+        return round(value, 2)
+
+    return {
+        "nwc": clean(nwc),
+        "current_ratio": clean(current_ratio),
+        "quick_ratio": clean(quick_ratio),
+        "wc_turnover": clean(wc_turnover),
+        "inventory_days": clean(inventory_days),
+        "receivable_days": clean(receivable_days),
+        "payable_days": clean(payable_days),
+        "operating_cycle": clean(operating_cycle),
+        "gap_days": clean(gap_days),
+        "drawing_power": clean(drawing_power),
+        "liquidity_score": liquidity_score,
+        "status": "Eligible" if nwc > 0 else "Not Eligible"
+    }
 
     # ============================
     # EXISTING RATIO ENGINE
