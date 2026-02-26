@@ -25,17 +25,29 @@ app.add_middleware(
 # WORKING CAPITAL UPLOAD
 # ==========================
 
-@app.post("/wc/upload")
-async def wc_upload(file: UploadFile = File(...)):
+@app.post("/wc/upload-dual")
+async def wc_upload_dual(
+    balance_sheet: UploadFile = File(...),
+    profit_loss: UploadFile = File(...)
+):
     try:
-        file_bytes = await file.read()
+        # Read files
+        bs_bytes = await balance_sheet.read()
+        pl_bytes = await profit_loss.read()
 
-        parsed_data = parse_financial_file(file_bytes, file.filename)
-        calculations = calculate_wc_logic(parsed_data)
+        # Parse separately
+        bs_data = parse_financial_file(bs_bytes, balance_sheet.filename)
+        pl_data = parse_financial_file(pl_bytes, profit_loss.filename)
+
+        # Merge extracted values
+        combined_data = {**bs_data, **pl_data}
+
+        # Run WC logic
+        calculations = calculate_wc_logic(combined_data)
 
         return {
-            **parsed_data,
-            **calculations,
+            "extracted_values": combined_data,
+            "calculations": calculations,
             "success": True
         }
 
