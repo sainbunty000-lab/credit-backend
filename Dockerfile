@@ -1,26 +1,42 @@
 FROM python:3.10-slim
 
-# Install system dependencies required for:
-# - Camelot
-# - OpenCV
-# - Ghostscript
-# - PDF processing
+# Prevent Python from writing .pyc files
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
+# ===============================
+# Install System Dependencies
+# ===============================
 RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    poppler-utils \
-    libtesseract-dev \
+    build-essential \
+    gcc \
     ghostscript \
+    poppler-utils \
+    tesseract-ocr \
+    libtesseract-dev \
     libgl1 \
     libglib2.0-0 \
-    build-essential \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
+# ===============================
+# Set Working Directory
+# ===============================
 WORKDIR /app
 
-COPY . .
+# Copy only requirements first (better caching)
+COPY requirements.txt .
 
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy full app
+COPY . .
+
+# ===============================
+# Start FastAPI
+# ===============================
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
