@@ -10,6 +10,6 @@ xlrd
 python-multipart
 python-dotenv
 reportlab
-camelot-py
+camelot-py[cv]
 ghostscript
 opencv-python
