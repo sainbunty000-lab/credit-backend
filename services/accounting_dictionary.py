@@ -23,8 +23,12 @@ ACCOUNTING_KEYWORDS = {
         "payables", "bills payable"
     ],
     "annual_sales": [
-        "revenue from operations", "revenue", "sales", "turnover", 
-        "net sales", "total income", "gross turnover"
+    "revenue from operations",
+    "total revenue",
+    "sales",
+    "turnover",
+    "gross receipts"
+        
     ],
     "cogs": [
         "cost of goods sold", "cogs", "cost of sales", "consumption of raw materials",
