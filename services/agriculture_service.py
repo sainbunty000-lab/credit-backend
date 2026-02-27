@@ -29,36 +29,51 @@ def calculate_agri_logic(doc_inc, tax, undoc_m, emi_m,
     adj_undoc = 0.42 * annual_undoc
 
     total_income = adj_doc + adj_undoc
-
     annual_existing_emi = EMI_existing_m * 12
-
     disposable_income = safe_subtract(total_income, annual_existing_emi)
 
     # =============================
     # FOIR CALCULATION
     # =============================
 
-    monthly_income = total_income / 12
-    foir_percent = safe_divide(EMI_existing_m, monthly_income) * 100
+    monthly_income = total_income / 12 if total_income > 0 else 0
+
+    foir_percent = (
+        safe_divide(EMI_existing_m, monthly_income) * 100
+        if monthly_income > 0 else 0
+    )
 
     max_foir_allowed = 60
-    max_new_emi = (monthly_income * max_foir_allowed / 100) - EMI_existing_m
+
+    max_new_emi = (
+        (monthly_income * max_foir_allowed / 100) - EMI_existing_m
+        if monthly_income > 0 else 0
+    )
 
     if max_new_emi < 0:
         max_new_emi = 0
 
     # =============================
-    # LOAN ELIGIBILITY CALCULATION
-    # EMI → LOAN FORMULA
+    # LOAN ELIGIBILITY - DUAL MODEL
     # =============================
 
+    # ----- MODEL 1: EMI FORMULA -----
     r = interest_rate / 100 / 12
     n = tenure_years * 12
 
     if r > 0:
-        eligible_loan = max_new_emi * ((1 + r)**n - 1) / (r * (1 + r)**n)
+        eligible_loan_emi_model = max_new_emi * ((1 + r) ** n - 1) / (r * (1 + r) ** n)
     else:
-        eligible_loan = max_new_emi * n
+        eligible_loan_emi_model = max_new_emi * n
+
+    # ----- MODEL 2: POLICY MULTIPLIER -----
+    if disposable_income > 0:
+        eligible_loan_policy_model = disposable_income / 0.14
+    else:
+        eligible_loan_policy_model = 0
+
+    # ----- FINAL CONSERVATIVE -----
+    eligible_loan = min(eligible_loan_emi_model, eligible_loan_policy_model)
 
     # =============================
     # REJECTION CONDITIONS
@@ -90,7 +105,7 @@ def calculate_agri_logic(doc_inc, tax, undoc_m, emi_m,
         score -= 20
 
     if adj_undoc > adj_doc:
-        score -= 10  # high informal income risk
+        score -= 10
 
     agri_score = max(0, min(score, 100))
 
@@ -108,7 +123,7 @@ def calculate_agri_logic(doc_inc, tax, undoc_m, emi_m,
         risk_grade = "D"
 
     # =============================
-    # CHART READY RESPONSE
+    # CHART DATA
     # =============================
 
     chart_data = {
@@ -135,7 +150,12 @@ def calculate_agri_logic(doc_inc, tax, undoc_m, emi_m,
         "disposable_income": round(disposable_income, 2),
         "foir_percent": round(foir_percent, 2),
         "max_new_emi_allowed": round(max_new_emi, 2),
+
+        # Dual model outputs
+        "eligible_loan_emi_model": round(eligible_loan_emi_model, 2),
+        "eligible_loan_policy_model": round(eligible_loan_policy_model, 2),
         "eligible_loan_amount": round(eligible_loan, 2),
+
         "agri_score": agri_score,
         "risk_grade": risk_grade,
         "status": status,
