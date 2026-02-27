@@ -9,7 +9,6 @@ from services.agriculture_service import calculate_agri_logic
 from services.banking_parser import parse_banking_file
 from services.banking_service import analyze_banking
 
-
 # ==========================
 # APP INITIALIZATION
 # ==========================
@@ -19,14 +18,12 @@ app = FastAPI(
     version="2.0.0",
 )
 
-
 # ==========================
 # REQUEST MODELS
 # ==========================
 
 class BankingAnalyzeRequest(BaseModel):
     transactions: List[Dict[str, Any]]
-
 
 # ==========================
 # CORS
@@ -39,7 +36,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # ==========================
 # WORKING CAPITAL UPLOAD
@@ -71,7 +67,6 @@ async def wc_upload_dual(
             "success": False,
             "error": str(e)
         }
-
 
 # ==========================
 # WORKING CAPITAL MANUAL
@@ -108,29 +103,24 @@ async def agri_calc(data: dict):
         data.get("interest_rate", 12)
     )
 
-
 # ==========================
 # BANKING UPLOAD
 # ==========================
 
 @app.post("/banking/upload")
 async def banking_upload(file: UploadFile = File(...)):
-    try:
-        file_bytes = await file.read()
-        parsed = parse_banking_file(file_bytes, file.filename)
-        return {"transactions": parsed}
-    except Exception as e:
-        return {"error": str(e)}
-
+    file_bytes = await file.read()
+    transactions = parse_banking_file(file_bytes, file.filename)
+    return {"transactions": transactions}
 
 # ==========================
 # BANKING ANALYZE
 # ==========================
 
 @app.post("/banking/analyze")
-async def banking_analyze(request: BankingAnalyzeRequest):
-    return analyze_banking(request.transactions)
-
+async def banking_analyze(data: dict):
+    transactions = data.get("transactions", [])
+    return analyze_banking(transactions)
 
 # ==========================
 # HEALTH CHECK
