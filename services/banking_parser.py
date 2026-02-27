@@ -1,15 +1,17 @@
+# services/banking_parser.py
+
 import pandas as pd
 import pdfplumber
 import camelot
 import tempfile
-import re
 from io import BytesIO
-from datetime import datetime
+import re
 
 
-# ===============================
-# PUBLIC ENTRY
-# ===============================
+# ==============================
+# MAIN PARSER ENTRY
+# ==============================
+
 def parse_banking_file(file_bytes, filename):
 
     filename = filename.lower()
@@ -18,19 +20,21 @@ def parse_banking_file(file_bytes, filename):
         df = pd.read_csv(BytesIO(file_bytes))
         return normalize_dataframe(df)
 
-    if filename.endswith((".xlsx", ".xls")):
+    elif filename.endswith((".xlsx", ".xls")):
         df = pd.read_excel(BytesIO(file_bytes))
         return normalize_dataframe(df)
 
-    if filename.endswith(".pdf"):
+    elif filename.endswith(".pdf"):
         return parse_pdf(file_bytes)
 
-    raise ValueError("Unsupported file format")
+    else:
+        raise ValueError("Unsupported file format")
 
 
-# ===============================
+# ==============================
 # PDF PARSER
-# ===============================
+# ==============================
+
 def parse_pdf(file_bytes):
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -40,166 +44,191 @@ def parse_pdf(file_bytes):
     try:
         tables = camelot.read_pdf(tmp_path, pages="all", flavor="stream")
 
-        if tables:
-            all_txns = []
-            for table in tables:
-                df = table.df
-                all_txns.extend(parse_table(df))
+        transactions = []
 
-            if all_txns:
-                return all_txns
+        for table in tables:
+            df = table.df
+            df = df.replace("\n", " ", regex=True)
 
-    except:
+            parsed = parse_table_dataframe(df)
+            transactions.extend(parsed)
+
+        if transactions:
+            return transactions
+
+    except Exception:
         pass
 
+    # Fallback text mode
     return parse_pdf_text(file_bytes)
 
 
-# ===============================
-# TABLE PARSER
-# ===============================
-def parse_table(df):
+# ==============================
+# TABLE DATAFRAME PARSER
+# ==============================
+
+def parse_table_dataframe(df):
 
     transactions = []
-    df = df.replace("\n", " ", regex=True)
 
     for _, row in df.iterrows():
 
-        row_text = " ".join(row.astype(str).tolist())
+        row_values = row.astype(str).tolist()
 
-        date = extract_date(row_text)
+        date = extract_date_from_row(row_values)
         if not date:
             continue
 
-        credit, debit = extract_amounts(row_text)
+        debit, credit = detect_amount_columns(row_values)
 
-        if credit == 0 and debit == 0:
+        # Skip invalid rows
+        if debit == 0 and credit == 0:
             continue
 
         transactions.append({
             "date": date,
             "credit": credit,
             "debit": debit,
-            "description": row_text.strip()
+            "description": " ".join(row_values),
         })
 
     return transactions
 
 
-# ===============================
-# FALLBACK TEXT PARSER
-# ===============================
+# ==============================
+# TEXT FALLBACK PARSER
+# ==============================
+
 def parse_pdf_text(file_bytes):
 
-    transactions = []
+    text_data = ""
 
     with pdfplumber.open(BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
-            text = page.extract_text() or ""
-            lines = text.split("\n")
+            text_data += page.extract_text() or ""
 
-            for line in lines:
-                date = extract_date(line)
-                if not date:
-                    continue
+    lines = text_data.split("\n")
 
-                credit, debit = extract_amounts(line)
+    transactions = []
 
-                if credit == 0 and debit == 0:
-                    continue
+    for line in lines:
 
-                transactions.append({
-                    "date": date,
-                    "credit": credit,
-                    "debit": debit,
-                    "description": line.strip()
-                })
+        date_match = re.search(r"\d{2}/\d{2}/\d{2}", line)
+        if not date_match:
+            continue
+
+        date = date_match.group()
+
+        numbers = extract_money_values(line)
+
+        if len(numbers) < 2:
+            continue
+
+        # Last two monetary values are usually txn + balance
+        txn_amount = numbers[-2]
+
+        if "cr" in line.lower():
+            credit = txn_amount
+            debit = 0
+        elif "dr" in line.lower():
+            debit = txn_amount
+            credit = 0
+        else:
+            # Cannot determine safely
+            continue
+
+        transactions.append({
+            "date": date,
+            "credit": credit,
+            "debit": debit,
+            "description": line.strip()
+        })
 
     return transactions
 
 
-# ===============================
-# DATE EXTRACTOR
-# ===============================
-def extract_date(text):
+# ==============================
+# HELPERS
+# ==============================
 
-    patterns = [
-        r"\d{2}/\d{2}/\d{4}",
-        r"\d{2}/\d{2}/\d{2}",
-        r"\d{4}-\d{2}-\d{2}"
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            try:
-                raw = match.group()
-
-                if "/" in raw and len(raw) == 8:
-                    dt = datetime.strptime(raw, "%d/%m/%y")
-                elif "/" in raw:
-                    dt = datetime.strptime(raw, "%d/%m/%Y")
-                else:
-                    dt = datetime.strptime(raw, "%Y-%m-%d")
-
-                return dt.strftime("%Y-%m-%d")
-
-            except:
-                continue
-
-    return None
-
-
-# ===============================
-# AMOUNT EXTRACTION (STRICT)
-# ===============================
-def extract_amounts(text):
-
-    text_upper = text.upper()
-
-    numbers = []
-    for token in text.split():
-        cleaned = token.replace(",", "")
-        try:
-            numbers.append(float(cleaned))
-        except:
-            continue
-
-    if len(numbers) < 1:
-        return 0.0, 0.0
-
-    txn_amount = numbers[-2] if len(numbers) >= 2 else numbers[0]
-
-    credit = 0.0
-    debit = 0.0
-
-    if "CR" in text_upper:
-        credit = txn_amount
-    elif "DR" in text_upper:
-        debit = txn_amount
-    elif any(x in text_upper for x in ["ATM", "POS", "WITHDRAW", "DEBIT"]):
-        debit = txn_amount
-    else:
-        credit = txn_amount
-
-    return round(credit, 2), round(debit, 2)
-
-
-# ===============================
-# CSV / EXCEL
-# ===============================
 def normalize_dataframe(df):
 
-    df.columns = [c.lower().strip() for c in df.columns]
+    df.columns = [c.strip().lower() for c in df.columns]
+
     transactions = []
 
     for _, row in df.iterrows():
 
+        credit = safe_float(row.get("credit", 0))
+        debit = safe_float(row.get("debit", 0))
+
+        # Sanity check
+        if credit > 10_000_000:
+            credit = 0
+
         transactions.append({
             "date": str(row.get("date")),
-            "credit": float(row.get("credit", 0) or 0),
-            "debit": float(row.get("debit", 0) or 0),
-            "description": str(row.get("description", ""))
+            "credit": credit,
+            "debit": debit,
+            "description": str(row.get("description", "")),
         })
 
     return transactions
+
+
+def extract_date_from_row(values):
+
+    for v in values:
+        match = re.search(r"\d{2}/\d{2}/\d{2}", v)
+        if match:
+            return match.group()
+
+    return None
+
+
+def detect_amount_columns(values):
+
+    money_values = []
+
+    for v in values:
+        cleaned = v.replace(",", "").strip()
+        try:
+            val = float(cleaned)
+            if 0 < val < 10_000_000:  # sanity range
+                money_values.append(val)
+        except:
+            continue
+
+    if len(money_values) < 2:
+        return 0, 0
+
+    txn_amount = money_values[-2]
+
+    # Try heuristic: negative numbers = debit
+    if txn_amount < 0:
+        return abs(txn_amount), 0
+
+    return 0, txn_amount
+
+
+def extract_money_values(text):
+
+    matches = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d+)?", text)
+
+    values = []
+    for m in matches:
+        try:
+            val = float(m.replace(",", ""))
+            if val < 10_000_000:
+                values.append(val)
+        except:
+            continue
+
+    return values
+
+
+def safe_float(value):
+    try:
+        return float(value)
+    except:
+        return 0
