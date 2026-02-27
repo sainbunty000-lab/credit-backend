@@ -10,8 +10,10 @@ from services.banking_parser import parse_banking_file
 from services.banking_service import analyze_banking
 
 app = FastAPI(
+    
     title="WC / Agri Calculator",
-    version="2.0.0"
+    version="2.0.0",
+    
 app = FastAPI()
 
 class BankingAnalyzeRequest(BaseModel):
