@@ -22,7 +22,7 @@ from services.banking_service import analyze_banking
 
 app = FastAPI(
     title="Credit Intelligence Engine",
-    version="2.0.0"
+    version="2.1.0"
 )
 
 app.add_middleware(
@@ -100,6 +100,7 @@ async def agri_calc(data: dict):
 # BANKING
 # ==========================
 
+# Step 1: Upload & Parse Only
 @app.post("/banking/upload")
 async def banking_upload(file: UploadFile = File(...)):
     try:
@@ -110,9 +111,22 @@ async def banking_upload(file: UploadFile = File(...)):
         return {"error": str(e)}
 
 
+# Step 2: Analyze Parsed Transactions
 @app.post("/banking/analyze")
 async def banking_analyze(request: BankingAnalyzeRequest):
     return analyze_banking(request.transactions)
+
+
+# OPTIONAL: One-step Full Analysis (Upload + Analyze Together)
+@app.post("/banking/full-analysis")
+async def banking_full_analysis(file: UploadFile = File(...)):
+    try:
+        file_bytes = await file.read()
+        parsed = parse_banking_file(file_bytes, file.filename)
+        result = analyze_banking(parsed)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
 
 
 # ==========================
