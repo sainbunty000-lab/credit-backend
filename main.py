@@ -1,24 +1,36 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Dict, Any
 
 from services.wc_parser import parse_financial_file
 from services.wc_service import calculate_wc_logic
 from services.agriculture_service import calculate_agri_logic
-from fastapi import FastAPI, UploadFile, File
-from pydantic import BaseModel
 from services.banking_parser import parse_banking_file
 from services.banking_service import analyze_banking
 
+
+# ==========================
+# APP INITIALIZATION
+# ==========================
+
 app = FastAPI(
-    
     title="WC / Agri Calculator",
     version="2.0.0",
-    
-app = FastAPI()
+)
+
+
+# ==========================
+# REQUEST MODELS
+# ==========================
 
 class BankingAnalyzeRequest(BaseModel):
     transactions: List[Dict[str, Any]]
-)
+
+
+# ==========================
+# CORS
+# ==========================
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,6 +39,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # ==========================
 # WORKING CAPITAL UPLOAD
@@ -38,25 +51,20 @@ async def wc_upload_dual(
     profit_loss: UploadFile = File(...)
 ):
     try:
-        # Read files
         bs_bytes = await balance_sheet.read()
         pl_bytes = await profit_loss.read()
 
-        # Parse separately
         bs_data = parse_financial_file(bs_bytes, balance_sheet.filename)
         pl_data = parse_financial_file(pl_bytes, profit_loss.filename)
 
-        # Merge extracted values
         combined_data = {**bs_data, **pl_data}
-
-        # Run WC logic
         calculations = calculate_wc_logic(combined_data)
 
         return {
-    **combined_data,
-    **calculations,
-    "success": True
-}
+            **combined_data,
+            **calculations,
+            "success": True
+        }
 
     except Exception as e:
         return {
@@ -100,6 +108,7 @@ async def agri_calc(data: dict):
         data.get("interest_rate", 12)
     )
 
+
 # ==========================
 # BANKING UPLOAD
 # ==========================
@@ -113,9 +122,15 @@ async def banking_upload(file: UploadFile = File(...)):
     except Exception as e:
         return {"error": str(e)}
 
+
+# ==========================
+# BANKING ANALYZE
+# ==========================
+
 @app.post("/banking/analyze")
 async def banking_analyze(request: BankingAnalyzeRequest):
     return analyze_banking(request.transactions)
+
 
 # ==========================
 # HEALTH CHECK
