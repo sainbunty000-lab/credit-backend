@@ -13,7 +13,6 @@ def analyze_banking(transactions):
     emi_bounce_count = 0
     fraud_flags = 0
     cash_credit_total = 0.0
-
     credit_list = []
 
     for t in transactions:
@@ -23,19 +22,20 @@ def analyze_banking(transactions):
         desc = str(t.get("description", "")).lower()
         date_str = t.get("date")
 
-        month_key = extract_month(date_str)
+        month = extract_month(date_str)
 
         total_credit += credit
         total_debit += debit
 
-        if month_key:
-            monthly_credit[month_key] += credit
-            monthly_debit[month_key] += debit
+        if month:
+            monthly_credit[month] += credit
+            monthly_debit[month] += debit
 
         if "return" in desc or "bounce" in desc:
             bounce_count += 1
-            if "emi" in desc:
-                emi_bounce_count += 1
+
+        if "emi" in desc and ("return" in desc or "bounce" in desc):
+            emi_bounce_count += 1
 
         if "cash" in desc:
             cash_credit_total += credit
@@ -55,11 +55,8 @@ def analyze_banking(transactions):
     cash_ratio = (cash_credit_total / total_credit * 100) if total_credit > 0 else 0
 
     credit_list.sort(reverse=True)
-
-    concentration_ratio = (
-        sum(credit_list[:5]) / total_credit * 100
-        if total_credit > 0 else 0
-    )
+    top_5_sum = sum(credit_list[:5])
+    concentration_ratio = (top_5_sum / total_credit * 100) if total_credit > 0 else 0
 
     hygiene_score = 100
 
@@ -76,17 +73,16 @@ def analyze_banking(transactions):
         hygiene_score -= 10
 
     hygiene_score -= min(fraud_flags * 10, 20)
-
     hygiene_score = max(0, min(hygiene_score, 100))
 
     if hygiene_score >= 80:
-        risk_grade, hygiene_status = "A", "Strong"
+        grade, status = "A", "Strong"
     elif hygiene_score >= 65:
-        risk_grade, hygiene_status = "B", "Good"
+        grade, status = "B", "Good"
     elif hygiene_score >= 50:
-        risk_grade, hygiene_status = "C", "Moderate"
+        grade, status = "C", "Moderate"
     else:
-        risk_grade, hygiene_status = "D", "Weak"
+        grade, status = "D", "Weak"
 
     return {
         "summary": {
@@ -100,8 +96,8 @@ def analyze_banking(transactions):
         "credit_concentration_percent": round(concentration_ratio, 2),
         "fraud_flags": fraud_flags,
         "hygiene_score": hygiene_score,
-        "risk_grade": risk_grade,
-        "hygiene_status": hygiene_status,
+        "risk_grade": grade,
+        "hygiene_status": status,
         "chart_data": {
             "monthly_trend": [
                 {
@@ -117,15 +113,7 @@ def analyze_banking(transactions):
 
 def extract_month(date_str):
     try:
-        if not date_str:
-            return None
-
-        try:
-            dt = datetime.strptime(date_str, "%d/%m/%y")
-        except:
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
-
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
         return dt.strftime("%Y-%m")
-
     except:
         return None
