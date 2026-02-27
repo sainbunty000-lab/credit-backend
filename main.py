@@ -105,12 +105,11 @@ async def banking_upload(file: UploadFile = File(...)):
     except Exception as e:
         return {"error": str(e)}
 
-
 @app.post("/banking/analyze")
 async def banking_analyze(data: dict):
+    # FIXED: banking_service.py's analyze_banking only takes one argument
     transactions = data.get("transactions", [])
-    months_count = data.get("months_count", 1)
-    return analyze_banking(transactions, months_count)
+    return analyze_banking(transactions)
 
 
 # ==========================
