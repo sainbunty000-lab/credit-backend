@@ -4,12 +4,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from services.wc_parser import parse_financial_file
 from services.wc_service import calculate_wc_logic
 from services.agriculture_service import calculate_agri_logic
-from services.banking_service import analyze_banking
+from fastapi import FastAPI, UploadFile, File
+from pydantic import BaseModel
 from services.banking_parser import parse_banking_file
+from services.banking_service import analyze_banking
 
 app = FastAPI(
     title="WC / Agri Calculator",
     version="2.0.0"
+app = FastAPI()
+
+class BankingAnalyzeRequest(BaseModel):
+    transactions: List[Dict[str, Any]]
 )
 
 app.add_middleware(
@@ -106,11 +112,8 @@ async def banking_upload(file: UploadFile = File(...)):
         return {"error": str(e)}
 
 @app.post("/banking/analyze")
-async def banking_analyze(data: dict):
-    # FIXED: banking_service.py's analyze_banking only takes one argument
-    transactions = data.get("transactions", [])
-    return analyze_banking(transactions)
-
+async def banking_analyze(request: BankingAnalyzeRequest):
+    return analyze_banking(request.transactions)
 
 # ==========================
 # HEALTH CHECK
