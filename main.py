@@ -3,31 +3,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any
 
+# ==========================
+# IMPORT SERVICES
+# ==========================
+
 from services.wc_parser import parse_financial_file
 from services.wc_service import calculate_wc_logic
+
 from services.agriculture_service import calculate_agri_logic
+
 from services.banking_parser import parse_banking_file
 from services.banking_service import analyze_banking
 
+
 # ==========================
-# APP INITIALIZATION
+# APP INIT
 # ==========================
 
 app = FastAPI(
-    title="WC / Agri Calculator",
-    version="2.0.0",
+    title="Credit Intelligence Engine",
+    version="2.0.0"
 )
-
-# ==========================
-# REQUEST MODELS
-# ==========================
-
-class BankingAnalyzeRequest(BaseModel):
-    transactions: List[Dict[str, Any]]
-
-# ==========================
-# CORS
-# ==========================
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,8 +33,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # ==========================
-# WORKING CAPITAL UPLOAD
+# REQUEST MODELS
+# ==========================
+
+class BankingAnalyzeRequest(BaseModel):
+    transactions: List[Dict[str, Any]]
+
+
+# ==========================
+# WORKING CAPITAL
 # ==========================
 
 @app.post("/wc/upload-dual")
@@ -63,29 +68,16 @@ async def wc_upload_dual(
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
 
-# ==========================
-# WORKING CAPITAL MANUAL
-# ==========================
 
 @app.post("/wc/manual-calc")
 async def wc_manual_calc(data: dict):
     try:
         result = calculate_wc_logic(data)
-        return {
-            **data,
-            **result,
-            "success": True
-        }
+        return {**data, **result, "success": True}
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
 
 
 # ==========================
@@ -103,24 +95,25 @@ async def agri_calc(data: dict):
         data.get("interest_rate", 12)
     )
 
+
 # ==========================
-# BANKING UPLOAD
+# BANKING
 # ==========================
 
 @app.post("/banking/upload")
 async def banking_upload(file: UploadFile = File(...)):
-    file_bytes = await file.read()
-    transactions = parse_banking_file(file_bytes, file.filename)
-    return {"transactions": transactions}
+    try:
+        file_bytes = await file.read()
+        parsed = parse_banking_file(file_bytes, file.filename)
+        return {"transactions": parsed}
+    except Exception as e:
+        return {"error": str(e)}
 
-# ==========================
-# BANKING ANALYZE
-# ==========================
 
 @app.post("/banking/analyze")
-async def banking_analyze(data: dict):
-    transactions = data.get("transactions", [])
-    return analyze_banking(transactions)
+async def banking_analyze(request: BankingAnalyzeRequest):
+    return analyze_banking(request.transactions)
+
 
 # ==========================
 # HEALTH CHECK
