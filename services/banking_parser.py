@@ -39,7 +39,7 @@ def extract_full_text(file_bytes):
 
 
 # =============================================
-# STRICT TRANSACTION EXTRACTION
+# SMART TRANSACTION EXTRACTION (HDFC Compatible)
 # =============================================
 
 def extract_transactions(text):
@@ -47,47 +47,81 @@ def extract_transactions(text):
     transactions = []
     lines = text.split("\n")
 
+    current_txn = None
+
     for line in lines:
 
-        lower_line = line.lower()
+        clean_line = line.strip()
+        lower_line = clean_line.lower()
 
-        # Skip obvious summary lines
+        # Skip obvious non-transaction lines
         if any(skip in lower_line for skip in [
-            "total debit",
-            "total credit",
+            "statement of account",
+            "account branch",
             "opening balance",
             "closing balance",
-            "statement summary"
+            "statement summary",
+            "generated on",
+            "page no",
+            "hdfc bank limited",
+            "ifsc",
+            "micr",
+            "address",
+            "nomination"
         ]):
             continue
 
-        # Detect date ANYWHERE in line
-        date_match = re.search(r"\d{2}/\d{2}/\d{2}", line)
-        if not date_match:
-            continue
+        # Detect new transaction by date
+        date_match = re.match(r"\d{2}/\d{2}/\d{2}", clean_line)
 
-        numbers = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d+)?", line)
+        if date_match:
 
-        if len(numbers) < 2:
-            continue
+            # Save previous txn
+            if current_txn:
+                transactions.append(current_txn)
 
-        txn_amount = float(numbers[-2].replace(",", ""))
+            numbers = re.findall(r"-?\d{1,3}(?:,\d{3})*(?:\.\d+)?", clean_line)
 
-        debit = 0
-        credit = 0
+            if len(numbers) < 2:
+                continue
 
-        if "dr" in lower_line:
-            debit = txn_amount
-        elif "cr" in lower_line:
-            credit = txn_amount
+            # Last number is usually closing balance
+            balance = float(numbers[-1].replace(",", ""))
+
+            # Second last number is transaction amount
+            amount = float(numbers[-2].replace(",", ""))
+
+            debit = 0
+            credit = 0
+
+            # Determine debit/credit
+            # If balance decreased → debit
+            # If balance increased → credit
+            # Since we don't know previous balance here,
+            # use keyword logic fallback
+
+            if any(word in lower_line for word in [
+                "upi", "ach", "o-mf", "debit", "payment", "billpay"
+            ]):
+                debit = amount
+            else:
+                credit = amount
+
+            current_txn = {
+                "date": date_match.group(),
+                "description": clean_line,
+                "debit": debit,
+                "credit": credit,
+                "balance": balance
+            }
+
         else:
-            continue
+            # Continuation line → append to description
+            if current_txn:
+                current_txn["description"] += " " + clean_line
 
-        transactions.append({
-            "date": date_match.group(),
-            "credit": credit,
-            "debit": debit,
-            "description": line.strip()
-        })
+    # Append last transaction
+    if current_txn:
+        transactions.append(current_txn)
 
     return transactions
