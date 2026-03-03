@@ -101,16 +101,7 @@ async def agri_calc(data: dict):
 # ==========================
 
 # Step 1: Upload & Parse Only
-@app.post("/banking/upload")
-async def banking_upload(file: UploadFile = File(...)):
-    try:
-        file_bytes = await file.read()
-        parsed = parse_banking_file(file_bytes, file.filename)
-        return {"transactions": parsed}
-    except Exception as e:
-        return {"error": str(e)}
 
-# OPTIONAL: One-step Full Analysis (Upload + Analyze Together)
 @app.post("/banking/full-analysis")
 async def banking_full_analysis(file: UploadFile = File(...)):
     try:
