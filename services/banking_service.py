@@ -2,14 +2,26 @@ from collections import defaultdict
 from datetime import datetime
 
 
-# ================================
+# =================================
 # MAIN ANALYSIS FUNCTION
-# ================================
+# =================================
 
-def analyze_banking(transactions):
+def analyze_banking(parsed_data):
 
-    total_credit = 0.0
-    total_debit = 0.0
+    # --------------------------------
+    # Extract Summary & Transactions
+    # --------------------------------
+    summary = parsed_data.get("summary", {})
+    transactions = parsed_data.get("transactions", [])
+
+    total_credit = float(summary.get("total_credit", 0))
+    total_debit = float(summary.get("total_debit", 0))
+    credit_txn_count = int(summary.get("credit_transactions", 0))
+    debit_txn_count = int(summary.get("debit_transactions", 0))
+
+    # --------------------------------
+    # Behaviour Metrics
+    # --------------------------------
     salary_credit_total = 0.0
     mf_redemption_total = 0.0
     loan_disbursal_total = 0.0
@@ -22,17 +34,13 @@ def analyze_banking(transactions):
     monthly_debit = defaultdict(float)
 
     running_balance = 0.0
-    salary_day_outflows = []
 
     for txn in transactions:
+
         date_str = txn.get("date")
         description = str(txn.get("description", "")).lower()
         credit = float(txn.get("credit", 0) or 0)
         debit = float(txn.get("debit", 0) or 0)
-        balance = txn.get("balance")
-
-        total_credit += credit
-        total_debit += debit
 
         # Monthly grouping
         month_key = extract_month(date_str)
@@ -40,26 +48,21 @@ def analyze_banking(transactions):
             monthly_credit[month_key] += credit
             monthly_debit[month_key] += debit
 
-        # Running balance detection
-        if balance is not None:
-            running_balance = float(balance)
-        else:
-            running_balance = running_balance + credit - debit
-
+        # Running balance estimation (if no balance provided)
+        running_balance += credit - debit
         if running_balance < 0:
             negative_balance_count += 1
 
         # Salary detection
         if "salary" in description:
             salary_credit_total += credit
-            salary_day = date_str
 
         # Mutual fund detection
-        if "mf" in description or "mutual" in description:
+        if "mutual" in description or "mf" in description:
             mf_redemption_total += credit
 
         # Loan disbursal detection
-        if "loan" in description or "disbursal" in description:
+        if "loan" in description and credit > 0:
             loan_disbursal_total += credit
 
         # EMI detection
@@ -74,15 +77,10 @@ def analyze_banking(transactions):
         if "cash" in description:
             cash_credit_total += credit
 
-    # ================================
-    # SUMMARY CALCULATIONS
-    # ================================
-
-    months = max(1, len(monthly_credit))
-
-    avg_monthly_credit = total_credit / months
-    avg_monthly_debit = total_debit / months
-    net_surplus = avg_monthly_credit - avg_monthly_debit
+    # --------------------------------
+    # Derived Metrics (Using Summary Totals)
+    # --------------------------------
+    net_surplus = total_credit - total_debit
 
     salary_dependency = (
         (salary_credit_total / total_credit) * 100
@@ -99,10 +97,9 @@ def analyze_banking(transactions):
         if total_credit > 0 else 0
     )
 
-    # ================================
-    # HYGIENE SCORE LOGIC
-    # ================================
-
+    # --------------------------------
+    # HYGIENE SCORE
+    # --------------------------------
     score = 100
 
     if net_surplus < 1000:
@@ -133,18 +130,17 @@ def analyze_banking(transactions):
         risk_grade = "D"
         status = "Weak"
 
-    # ================================
-    # STRUCTURED RESPONSE
-    # ================================
-
+    # --------------------------------
+    # RESPONSE STRUCTURE
+    # --------------------------------
     return {
 
         "statement_summary": {
             "total_credit": round(total_credit, 2),
             "total_debit": round(total_debit, 2),
             "net_surplus": round(net_surplus, 2),
-            "credit_transactions": count_credit_txns(transactions),
-            "debit_transactions": count_debit_txns(transactions)
+            "credit_transactions": credit_txn_count,
+            "debit_transactions": debit_txn_count
         },
 
         "income_analysis": {
@@ -184,9 +180,9 @@ def analyze_banking(transactions):
     }
 
 
-# ================================
+# =================================
 # HELPER FUNCTIONS
-# ================================
+# =================================
 
 def extract_month(date_str):
     try:
@@ -194,11 +190,3 @@ def extract_month(date_str):
         return dt.strftime("%Y-%m")
     except:
         return None
-
-
-def count_credit_txns(transactions):
-    return sum(1 for t in transactions if float(t.get("credit", 0)) > 0)
-
-
-def count_debit_txns(transactions):
-    return sum(1 for t in transactions if float(t.get("debit", 0)) > 0)
