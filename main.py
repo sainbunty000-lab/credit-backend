@@ -13,7 +13,7 @@ from services.wc_service import calculate_wc_logic
 from services.agriculture_service import calculate_agri_logic
 
 from services.banking_parser import parse_banking_file
-from services.banking_service import analyze_banking
+from services.analyzer import analyze_transactions   # ✅ Updated Layer
 
 
 # ==========================
@@ -22,7 +22,7 @@ from services.banking_service import analyze_banking
 
 app = FastAPI(
     title="Credit Intelligence Engine",
-    version="2.1.0"
+    version="2.2.0"
 )
 
 app.add_middleware(
@@ -43,7 +43,7 @@ class BankingAnalyzeRequest(BaseModel):
 
 
 # ==========================
-# WORKING CAPITAL
+# WORKING CAPITAL (UNCHANGED)
 # ==========================
 
 @app.post("/wc/upload-dual")
@@ -81,7 +81,7 @@ async def wc_manual_calc(data: dict):
 
 
 # ==========================
-# AGRICULTURE
+# AGRICULTURE (UNCHANGED)
 # ==========================
 
 @app.post("/agriculture/calculate")
@@ -97,29 +97,50 @@ async def agri_calc(data: dict):
 
 
 # ==========================
-# BANKING
+# BANKING (ENTERPRISE VERSION)
 # ==========================
-
-# Step 1: Upload & Parse Only
 
 @app.post("/banking/full-analysis")
 async def banking_full_analysis(file: UploadFile = File(...)):
     try:
         file_bytes = await file.read()
 
+        # Step 1 → Parse PDF into transactions
         transactions = parse_banking_file(file_bytes, file.filename)
 
-        result = analyze_banking(transactions)
+        if not transactions:
+            return {
+                "success": False,
+                "error": "No transactions detected in statement."
+            }
 
-        return result
+        # Step 2 → Enterprise Analyzer Layer
+        result = analyze_transactions(transactions)
+
+        return {
+            "success": True,
+            "analysis": result
+        }
 
     except Exception as e:
-        return {"error": str(e)}
-        
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
 # ==========================
 # HEALTH CHECK
 # ==========================
 
 @app.get("/")
 def health():
-    return {"status": "Backend Active"}
+    return {
+        "status": "Backend Active",
+        "version": "2.2.0",
+        "modules": {
+            "working_capital": "active",
+            "agriculture": "active",
+            "banking": "enterprise_enabled"
+        }
+    }
