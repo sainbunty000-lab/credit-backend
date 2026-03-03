@@ -45,14 +45,13 @@ def extract_full_text(file_bytes):
 def extract_transactions(text):
 
     transactions = []
-
     lines = text.split("\n")
 
     for line in lines:
 
         lower_line = line.lower()
 
-        # Skip summary or header lines
+        # Skip obvious summary lines
         if any(skip in lower_line for skip in [
             "total debit",
             "total credit",
@@ -62,8 +61,8 @@ def extract_transactions(text):
         ]):
             continue
 
-        # Must start with date (strict)
-        date_match = re.match(r"\d{2}/\d{2}/\d{2}", line)
+        # Detect date ANYWHERE in line
+        date_match = re.search(r"\d{2}/\d{2}/\d{2}", line)
         if not date_match:
             continue
 
@@ -77,9 +76,9 @@ def extract_transactions(text):
         debit = 0
         credit = 0
 
-        if " dr" in lower_line:
+        if "dr" in lower_line:
             debit = txn_amount
-        elif " cr" in lower_line:
+        elif "cr" in lower_line:
             credit = txn_amount
         else:
             continue
