@@ -56,12 +56,12 @@ def extract_statement_summary(text):
     }
 
     patterns = {
-        "opening_balance": r"Opening Balance\s*₹?\s*([\d,]+\.\d+)",
-        "closing_balance": r"Closing Balance\s*₹?\s*([\d,]+\.\d+)",
-        "total_credit": r"Total Credits?\s*₹?\s*([\d,]+\.\d+)",
-        "total_debit": r"Total Debits?\s*₹?\s*([\d,]+\.\d+)",
-        "credit_transactions": r"Credit Transactions?\s*(\d+)",
-        "debit_transactions": r"Debit Transactions?\s*(\d+)"
+        "opening_balance": r"Opening Balance\s*[:\-]?\s*([\d,]+\.\d+)",
+        "closing_balance": r"Closing Balance\s*[:\-]?\s*([\d,]+\.\d+)",
+        "total_credit": r"Total Credits?\s*[:\-]?\s*([\d,]+\.\d+)",
+        "total_debit": r"Total Debits?\s*[:\-]?\s*([\d,]+\.\d+)",
+        "credit_transactions": r"Credit Transactions?\s*[:\-]?\s*(\d+)",
+        "debit_transactions": r"Debit Transactions?\s*[:\-]?\s*(\d+)"
     }
 
     for key, pattern in patterns.items():
