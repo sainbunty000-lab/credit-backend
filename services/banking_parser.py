@@ -1,129 +1,95 @@
 import pdfplumber
-import pandas as pd
 from io import BytesIO
 import re
 
 
-# =====================================================
+# ======================================================
 # MAIN ENTRY
-# =====================================================
+# ======================================================
 def parse_banking_file(file_bytes, filename):
 
     filename = filename.lower()
 
     if filename.endswith(".pdf"):
-        return parse_pdf(file_bytes)
-
-    elif filename.endswith(".csv"):
-        df = pd.read_csv(BytesIO(file_bytes))
-        return normalize_dataframe(df)
-
-    elif filename.endswith((".xlsx", ".xls")):
-        df = pd.read_excel(BytesIO(file_bytes))
-        return normalize_dataframe(df)
+        return parse_pdf_text_based(file_bytes)
 
     else:
-        raise ValueError("Unsupported file format")
+        raise ValueError("Only PDF supported for full analysis endpoint")
 
 
-# =====================================================
-# PDF PARSER (TABLE BASED)
-# =====================================================
-def parse_pdf(file_bytes):
+# ======================================================
+# TEXT-BASED HDFC SAFE PARSER
+# ======================================================
+def parse_pdf_text_based(file_bytes):
 
     transactions = []
 
     with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-
         for page in pdf.pages:
+            text = page.extract_text()
+            if not text:
+                continue
 
-            tables = page.extract_tables()
+            lines = text.split("\n")
 
-            for table in tables:
+            for line in lines:
 
-                if not table or len(table) < 2:
+                # Detect transaction row (starts with date)
+                if not re.search(r"\d{2}/\d{2}/\d{2}", line):
                     continue
 
-                headers = [str(h).lower() if h else "" for h in table[0]]
+                numbers = extract_money_values(line)
 
-                # Try to detect column positions
-                date_index = find_column(headers, ["date"])
-                debit_index = find_column(headers, ["debit", "withdrawal", "dr"])
-                credit_index = find_column(headers, ["credit", "deposit", "cr"])
-                balance_index = find_column(headers, ["balance"])
-
-                if date_index is None:
+                if len(numbers) < 2:
                     continue
 
-                for row in table[1:]:
+                txn_amount = numbers[-2]   # second last = txn
+                balance = numbers[-1]      # last = balance
 
-                    try:
-                        date_val = row[date_index]
-                        if not date_val:
-                            continue
+                debit = 0
+                credit = 0
 
-                        if not re.search(r"\d{2}/\d{2}/\d{2}", str(date_val)):
-                            continue
+                line_lower = line.lower()
 
-                        debit = safe_float(row[debit_index]) if debit_index is not None else 0
-                        credit = safe_float(row[credit_index]) if credit_index is not None else 0
+                if "dr" in line_lower:
+                    debit = txn_amount
+                elif "cr" in line_lower:
+                    credit = txn_amount
+                else:
+                    # Fallback logic
+                    if txn_amount < 0:
+                        debit = abs(txn_amount)
+                    else:
+                        credit = txn_amount
 
-                        # Skip empty rows
-                        if debit == 0 and credit == 0:
-                            continue
+                if debit == 0 and credit == 0:
+                    continue
 
-                        transactions.append({
-                            "date": str(date_val),
-                            "debit": debit,
-                            "credit": credit,
-                            "description": " ".join(str(c) for c in row if c)
-                        })
-
-                    except Exception:
-                        continue
+                transactions.append({
+                    "date": re.search(r"\d{2}/\d{2}/\d{2}", line).group(),
+                    "credit": credit,
+                    "debit": debit,
+                    "description": line.strip()
+                })
 
     return transactions
 
 
-# =====================================================
-# HELPER FUNCTIONS
-# =====================================================
-def find_column(headers, keywords):
+# ======================================================
+# MONEY EXTRACTOR
+# ======================================================
+def extract_money_values(text):
 
-    for i, header in enumerate(headers):
-        for keyword in keywords:
-            if keyword in header:
-                return i
+    matches = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d+)?", text)
 
-    return None
+    values = []
 
-
-def normalize_dataframe(df):
-
-    df.columns = [c.lower().strip() for c in df.columns]
-
-    transactions = []
-
-    for _, row in df.iterrows():
-
-        credit = safe_float(row.get("credit", 0))
-        debit = safe_float(row.get("debit", 0))
-
-        if debit == 0 and credit == 0:
+    for m in matches:
+        try:
+            val = float(m.replace(",", ""))
+            if val < 100000000:  # sanity filter
+                values.append(val)
+        except:
             continue
 
-        transactions.append({
-            "date": str(row.get("date")),
-            "credit": credit,
-            "debit": debit,
-            "description": str(row.get("description", "")),
-        })
-
-    return transactions
-
-
-def safe_float(value):
-    try:
-        return float(str(value).replace(",", "").strip())
-    except:
-        return 0
+    return values
