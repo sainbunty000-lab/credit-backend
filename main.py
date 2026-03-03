@@ -105,20 +105,17 @@ async def agri_calc(data: dict):
 @app.post("/banking/full-analysis")
 async def banking_full_analysis(file: UploadFile = File(...)):
     try:
-        # Read file bytes
         file_bytes = await file.read()
 
-        # Parse banking file (returns summary + transactions)
-        parsed = parse_banking_file(file_bytes, file.filename)
+        transactions = parse_banking_file(file_bytes, file.filename)
 
-        # Analyze using updated service
-        result = analyze_banking(parsed)
+        result = analyze_banking(transactions)
 
         return result
 
     except Exception as e:
         return {"error": str(e)}
-
+        
 # ==========================
 # HEALTH CHECK
 # ==========================
