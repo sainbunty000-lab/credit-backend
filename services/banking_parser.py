@@ -32,7 +32,7 @@ def parse_banking_file(file_bytes, filename):
 
 
 # =========================================
-# PDF PARSER
+# PDF PARSER (Stable Multi-Mode)
 # =========================================
 
 def parse_pdf(file_bytes):
@@ -43,33 +43,57 @@ def parse_pdf(file_bytes):
 
     transactions = []
 
+    # ---- Try Camelot Lattice (best for bank statements)
     try:
-        tables = camelot.read_pdf(tmp_path, pages="all", flavor="stream")
-
-        for table in tables:
-            df = table.df.replace("\n", " ", regex=True)
-            parsed = parse_table_dataframe(df)
-            transactions.extend(parsed)
+        tables = camelot.read_pdf(tmp_path, pages="all", flavor="lattice")
+        transactions = extract_from_camelot_tables(tables)
 
         if transactions:
             return transactions
 
-    except Exception:
+    except:
         pass
 
-    # Fallback
-    return parse_pdf_text(file_bytes)
+    # ---- Try Camelot Stream
+    try:
+        tables = camelot.read_pdf(tmp_path, pages="all", flavor="stream")
+        transactions = extract_from_camelot_tables(tables)
+
+        if transactions:
+            return transactions
+
+    except:
+        pass
+
+    # ---- Fallback: Structured pdfplumber extraction
+    return parse_with_pdfplumber(file_bytes)
 
 
 # =========================================
-# TABLE PARSER (COLUMN MAPPED – PRODUCTION SAFE)
+# CAMEL0T TABLE EXTRACTION
+# =========================================
+
+def extract_from_camelot_tables(tables):
+
+    transactions = []
+
+    for table in tables:
+        df = table.df.replace("\n", " ", regex=True)
+
+        parsed = parse_table_dataframe(df)
+        transactions.extend(parsed)
+
+    return transactions
+
+
+# =========================================
+# COLUMN-BASED TABLE PARSER
 # =========================================
 
 def parse_table_dataframe(df):
 
     transactions = []
 
-    # Convert first row to lowercase header
     header = df.iloc[0].astype(str).str.lower().tolist()
 
     debit_col = None
@@ -91,34 +115,33 @@ def parse_table_dataframe(df):
         if "balance" in col:
             balance_col = i
 
-    # If no header detected, fallback to numeric heuristic
-    if debit_col is None and credit_col is None:
-        return parse_table_numeric_fallback(df)
+    # If required columns missing → skip this table
+    if debit_col is None or credit_col is None:
+        return []
 
-    # Skip header row
     for idx in range(1, len(df)):
 
         row = df.iloc[idx].astype(str).tolist()
 
-        date = None
+        date = row[date_col] if date_col is not None else None
 
-        if date_col is not None:
-            date = row[date_col]
-        else:
-            date = extract_date_from_row(row)
-
-        if not date or not re.search(r"\d{2}/\d{2}/\d{2}", date):
+        # STRICT DATE VALIDATION
+        if not date or not re.fullmatch(r"\d{2}/\d{2}/\d{2}", date.strip()):
             continue
 
-        debit = safe_float(row[debit_col]) if debit_col is not None else 0
-        credit = safe_float(row[credit_col]) if credit_col is not None else 0
-        balance = safe_float(row[balance_col]) if balance_col is not None else 0
+        debit = safe_float(row[debit_col])
+        credit = safe_float(row[credit_col])
+        balance = safe_float(row[balance_col]) if balance_col else 0
+
+        # Strict validation rules
+        if debit > 0 and credit > 0:
+            continue
 
         if debit == 0 and credit == 0:
             continue
 
         transactions.append({
-            "date": date,
+            "date": date.strip(),
             "credit": round(credit, 2),
             "debit": round(debit, 2),
             "balance": round(balance, 2),
@@ -129,101 +152,74 @@ def parse_table_dataframe(df):
 
 
 # =========================================
-# NUMERIC FALLBACK (WHEN HEADER NOT FOUND)
+# PDFPLUMBER STRUCTURED FALLBACK
 # =========================================
 
-def parse_table_numeric_fallback(df):
+def parse_with_pdfplumber(file_bytes):
 
     transactions = []
-
-    for _, row in df.iterrows():
-
-        row_values = row.astype(str).tolist()
-        date = extract_date_from_row(row_values)
-
-        if not date:
-            continue
-
-        numbers = extract_money_values(" ".join(row_values))
-
-        if len(numbers) < 2:
-            continue
-
-        # Assume: debit | credit | balance
-        if len(numbers) >= 3:
-            debit = numbers[-3]
-            credit = numbers[-2]
-            balance = numbers[-1]
-        else:
-            debit = 0
-            credit = numbers[-2]
-            balance = numbers[-1]
-
-        if debit == 0 and credit == 0:
-            continue
-
-        transactions.append({
-            "date": date,
-            "credit": round(credit, 2),
-            "debit": round(debit, 2),
-            "balance": round(balance, 2),
-            "description": " ".join(row_values)
-        })
-
-    return transactions
-
-
-# =========================================
-# TEXT FALLBACK PARSER
-# =========================================
-
-def parse_pdf_text(file_bytes):
-
-    text_data = ""
 
     with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+
         for page in pdf.pages:
-            text_data += page.extract_text() or ""
 
-    lines = text_data.split("\n")
-    transactions = []
+            tables = page.extract_tables()
 
-    for line in lines:
+            for table in tables:
 
-        date_match = re.search(r"\d{2}/\d{2}/\d{2}", line)
-        if not date_match:
-            continue
+                if not table or len(table) < 2:
+                    continue
 
-        date = date_match.group()
-        numbers = extract_money_values(line)
+                header = [str(h).lower() if h else "" for h in table[0]]
 
-        if len(numbers) < 2:
-            continue
+                debit_col = None
+                credit_col = None
+                balance_col = None
+                date_col = None
 
-        txn_amount = numbers[-2]
-        balance = numbers[-1]
+                for i, col in enumerate(header):
 
-        credit = 0
-        debit = 0
+                    if "date" in col:
+                        date_col = i
+                    if "debit" in col:
+                        debit_col = i
+                    if "credit" in col:
+                        credit_col = i
+                    if "balance" in col:
+                        balance_col = i
 
-        if "cr" in line.lower():
-            credit = txn_amount
-        elif "dr" in line.lower():
-            debit = txn_amount
-        else:
-            # Compare with balance
-            if txn_amount < balance:
-                credit = txn_amount
-            else:
-                debit = txn_amount
+                if debit_col is None or credit_col is None:
+                    continue
 
-        transactions.append({
-            "date": date,
-            "credit": round(credit, 2),
-            "debit": round(debit, 2),
-            "balance": round(balance, 2),
-            "description": line.strip()
-        })
+                for row in table[1:]:
+
+                    if not row:
+                        continue
+
+                    row = [str(r) if r else "" for r in row]
+
+                    date = row[date_col] if date_col is not None else None
+
+                    if not date or not re.fullmatch(r"\d{2}/\d{2}/\d{2}", date.strip()):
+                        continue
+
+                    debit = safe_float(row[debit_col])
+                    credit = safe_float(row[credit_col])
+                    balance = safe_float(row[balance_col]) if balance_col else 0
+
+                    if debit > 0 and credit > 0:
+                        continue
+
+                    if debit == 0 and credit == 0:
+                        continue
+
+                    transactions.append({
+                        "date": date.strip(),
+                        "credit": round(credit, 2),
+                        "debit": round(debit, 2),
+                        "balance": round(balance, 2),
+                        "description": " ".join(row)
+                    })
 
     return transactions
 
@@ -256,34 +252,8 @@ def normalize_dataframe(df):
 
 
 # =========================================
-# HELPERS
+# SAFE FLOAT
 # =========================================
-
-def extract_date_from_row(values):
-
-    for v in values:
-        match = re.search(r"\d{2}/\d{2}/\d{2}", v)
-        if match:
-            return match.group()
-
-    return None
-
-
-def extract_money_values(text):
-
-    matches = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d+)?", text)
-
-    values = []
-    for m in matches:
-        try:
-            val = float(m.replace(",", ""))
-            if val < 10_000_000:
-                values.append(val)
-        except:
-            continue
-
-    return values
-
 
 def safe_float(value):
     try:
