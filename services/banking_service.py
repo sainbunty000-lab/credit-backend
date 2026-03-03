@@ -6,22 +6,14 @@ from datetime import datetime
 # MAIN ANALYSIS FUNCTION
 # =================================
 
-def analyze_banking(parsed_data):
+def analyze_banking(transactions):
 
-    # --------------------------------
-    # Extract Summary & Transactions
-    # --------------------------------
-    summary = parsed_data.get("summary", {})
-    transactions = parsed_data.get("transactions", [])
+    total_credit = sum(t["credit"] for t in transactions)
+    total_debit = sum(t["debit"] for t in transactions)
 
-    total_credit = float(summary.get("total_credit", 0))
-    total_debit = float(summary.get("total_debit", 0))
-    credit_txn_count = int(summary.get("credit_transactions", 0))
-    debit_txn_count = int(summary.get("debit_transactions", 0))
+    credit_txn_count = sum(1 for t in transactions if t["credit"] > 0)
+    debit_txn_count = sum(1 for t in transactions if t["debit"] > 0)
 
-    # --------------------------------
-    # Behaviour Metrics
-    # --------------------------------
     salary_credit_total = 0.0
     mf_redemption_total = 0.0
     loan_disbursal_total = 0.0
@@ -39,8 +31,8 @@ def analyze_banking(parsed_data):
 
         date_str = txn.get("date")
         description = str(txn.get("description", "")).lower()
-        credit = float(txn.get("credit", 0) or 0)
-        debit = float(txn.get("debit", 0) or 0)
+        credit = txn.get("credit", 0)
+        debit = txn.get("debit", 0)
 
         # Monthly grouping
         month_key = extract_month(date_str)
@@ -48,7 +40,6 @@ def analyze_banking(parsed_data):
             monthly_credit[month_key] += credit
             monthly_debit[month_key] += debit
 
-        # Running balance estimation (if no balance provided)
         running_balance += credit - debit
         if running_balance < 0:
             negative_balance_count += 1
@@ -77,9 +68,6 @@ def analyze_banking(parsed_data):
         if "cash" in description:
             cash_credit_total += credit
 
-    # --------------------------------
-    # Derived Metrics (Using Summary Totals)
-    # --------------------------------
     net_surplus = total_credit - total_debit
 
     salary_dependency = (
@@ -97,9 +85,10 @@ def analyze_banking(parsed_data):
         if total_credit > 0 else 0
     )
 
-    # --------------------------------
+    # ===============================
     # HYGIENE SCORE
-    # --------------------------------
+    # ===============================
+
     score = 100
 
     if net_surplus < 1000:
@@ -116,7 +105,6 @@ def analyze_banking(parsed_data):
 
     score = max(0, min(score, 100))
 
-    # Risk Grade Mapping
     if score >= 80:
         risk_grade = "A"
         status = "Strong"
@@ -130,9 +118,6 @@ def analyze_banking(parsed_data):
         risk_grade = "D"
         status = "Weak"
 
-    # --------------------------------
-    # RESPONSE STRUCTURE
-    # --------------------------------
     return {
 
         "statement_summary": {
@@ -152,7 +137,7 @@ def analyze_banking(parsed_data):
 
         "expense_analysis": {
             "emi_total": round(emi_debit_total, 2),
-            "expense_ratio_percent": round(expense_ratio, 2),
+            "expense_ratio_percent": round(expense_ratio, 2)
         },
 
         "behavior_analysis": {
@@ -181,7 +166,7 @@ def analyze_banking(parsed_data):
 
 
 # =================================
-# HELPER FUNCTIONS
+# HELPER
 # =================================
 
 def extract_month(date_str):
