@@ -8,9 +8,9 @@ from io import BytesIO
 import re
 
 
-# ==============================
+# ======================================
 # MAIN PARSER ENTRY
-# ==============================
+# ======================================
 
 def parse_banking_file(file_bytes, filename):
 
@@ -31,9 +31,9 @@ def parse_banking_file(file_bytes, filename):
         raise ValueError("Unsupported file format")
 
 
-# ==============================
+# ======================================
 # PDF PARSER
-# ==============================
+# ======================================
 
 def parse_pdf(file_bytes):
 
@@ -41,15 +41,14 @@ def parse_pdf(file_bytes):
         tmp.write(file_bytes)
         tmp_path = tmp.name
 
+    transactions = []
+
     try:
         tables = camelot.read_pdf(tmp_path, pages="all", flavor="stream")
-
-        transactions = []
 
         for table in tables:
             df = table.df
             df = df.replace("\n", " ", regex=True)
-
             parsed = parse_table_dataframe(df)
             transactions.extend(parsed)
 
@@ -59,13 +58,13 @@ def parse_pdf(file_bytes):
     except Exception:
         pass
 
-    # Fallback text mode
+    # Fallback to text parsing
     return parse_pdf_text(file_bytes)
 
 
-# ==============================
-# TABLE DATAFRAME PARSER
-# ==============================
+# ======================================
+# TABLE PARSER (Improved Detection)
+# ======================================
 
 def parse_table_dataframe(df):
 
@@ -79,7 +78,7 @@ def parse_table_dataframe(df):
         if not date:
             continue
 
-        debit, credit = detect_amount_columns(row_values)
+        debit, credit, balance = detect_amount_columns(row_values)
 
         # Skip invalid rows
         if debit == 0 and credit == 0:
@@ -89,15 +88,16 @@ def parse_table_dataframe(df):
             "date": date,
             "credit": credit,
             "debit": debit,
+            "balance": balance,
             "description": " ".join(row_values),
         })
 
     return transactions
 
 
-# ==============================
+# ======================================
 # TEXT FALLBACK PARSER
-# ==============================
+# ======================================
 
 def parse_pdf_text(file_bytes):
 
@@ -108,7 +108,6 @@ def parse_pdf_text(file_bytes):
             text_data += page.extract_text() or ""
 
     lines = text_data.split("\n")
-
     transactions = []
 
     for line in lines:
@@ -118,38 +117,42 @@ def parse_pdf_text(file_bytes):
             continue
 
         date = date_match.group()
-
         numbers = extract_money_values(line)
 
         if len(numbers) < 2:
             continue
 
-        # Last two monetary values are usually txn + balance
         txn_amount = numbers[-2]
+        balance = numbers[-1]
+
+        credit = 0
+        debit = 0
 
         if "cr" in line.lower():
             credit = txn_amount
-            debit = 0
         elif "dr" in line.lower():
             debit = txn_amount
-            credit = 0
         else:
-            # Cannot determine safely
-            continue
+            # Heuristic: compare with balance
+            if txn_amount < balance:
+                credit = txn_amount
+            else:
+                debit = txn_amount
 
         transactions.append({
             "date": date,
-            "credit": credit,
-            "debit": debit,
+            "credit": round(credit, 2),
+            "debit": round(debit, 2),
+            "balance": round(balance, 2),
             "description": line.strip()
         })
 
     return transactions
 
 
-# ==============================
-# HELPERS
-# ==============================
+# ======================================
+# CSV / EXCEL NORMALIZATION
+# ======================================
 
 def normalize_dataframe(df):
 
@@ -161,20 +164,22 @@ def normalize_dataframe(df):
 
         credit = safe_float(row.get("credit", 0))
         debit = safe_float(row.get("debit", 0))
-
-        # Sanity check
-        if credit > 10_000_000:
-            credit = 0
+        balance = safe_float(row.get("balance", 0))
 
         transactions.append({
             "date": str(row.get("date")),
             "credit": credit,
             "debit": debit,
+            "balance": balance,
             "description": str(row.get("description", "")),
         })
 
     return transactions
 
+
+# ======================================
+# HELPERS
+# ======================================
 
 def extract_date_from_row(values):
 
@@ -186,6 +191,7 @@ def extract_date_from_row(values):
     return None
 
 
+# 🔥 IMPORTANT FIX: Proper Debit/Credit Detection
 def detect_amount_columns(values):
 
     money_values = []
@@ -194,21 +200,46 @@ def detect_amount_columns(values):
         cleaned = v.replace(",", "").strip()
         try:
             val = float(cleaned)
-            if 0 < val < 10_000_000:  # sanity range
+            if 0 < abs(val) < 10_000_000:
                 money_values.append(val)
         except:
             continue
 
     if len(money_values) < 2:
-        return 0, 0
+        return 0, 0, None
 
+    # Assume structure: Debit | Credit | Balance
+    # Most Indian banks use this format
+    if len(money_values) >= 3:
+        debit_candidate = money_values[-3]
+        credit_candidate = money_values[-2]
+        balance = money_values[-1]
+
+        debit = debit_candidate if debit_candidate > 0 else 0
+        credit = credit_candidate if credit_candidate > 0 else 0
+
+        # Prevent both filled
+        if debit > 0 and credit > 0:
+            if debit > credit:
+                credit = 0
+            else:
+                debit = 0
+
+        return round(debit, 2), round(credit, 2), round(balance, 2)
+
+    # If only amount + balance
     txn_amount = money_values[-2]
+    balance = money_values[-1]
 
-    # Try heuristic: negative numbers = debit
-    if txn_amount < 0:
-        return abs(txn_amount), 0
+    debit = 0
+    credit = 0
 
-    return 0, txn_amount
+    if txn_amount < balance:
+        credit = txn_amount
+    else:
+        debit = txn_amount
+
+    return round(debit, 2), round(credit, 2), round(balance, 2)
 
 
 def extract_money_values(text):
