@@ -110,13 +110,6 @@ async def banking_upload(file: UploadFile = File(...)):
     except Exception as e:
         return {"error": str(e)}
 
-
-# Step 2: Analyze Parsed Transactions
-@app.post("/banking/analyze")
-async def banking_analyze(request: BankingAnalyzeRequest):
-    return analyze_banking(request.transactions)
-
-
 # OPTIONAL: One-step Full Analysis (Upload + Analyze Together)
 @app.post("/banking/full-analysis")
 async def banking_full_analysis(file: UploadFile = File(...)):
