@@ -11,14 +11,15 @@ from .banking_dictionary import CREDIT_KEYWORDS, DEBIT_KEYWORDS
 
 def parse_banking_file(file_bytes):
 
-    # 1️⃣ Try structured table extraction
     transactions = parse_table_statement(file_bytes)
 
-    if transactions:
-        return transactions
+    if not transactions:
+        transactions = universal_parser(file_bytes)
 
-    # 2️⃣ Fallback universal parser
-    return universal_parser(file_bytes)
+    # Apply balance validation correction
+    transactions = validate_balance_flow(transactions)
+
+    return transactions
 
 
 # ====================================================
@@ -34,7 +35,7 @@ def to_float(value):
 
 
 # ====================================================
-# TABLE PARSER (BEST ACCURACY)
+# TABLE PARSER
 # ====================================================
 
 def parse_table_statement(file_bytes):
@@ -57,7 +58,6 @@ def parse_table_statement(file_bytes):
                     if not row or len(row) < 6:
                         continue
 
-                    # Skip header rows
                     if "date" in str(row[0]).lower():
                         continue
 
@@ -87,7 +87,7 @@ def parse_table_statement(file_bytes):
 
 
 # ====================================================
-# UNIVERSAL PARSER (FALLBACK)
+# UNIVERSAL PARSER
 # ====================================================
 
 def universal_parser(file_bytes):
@@ -141,24 +141,22 @@ def universal_parser(file_bytes):
 
 
 # ====================================================
-# CLASSIFICATION ENGINE
+# KEYWORD CLASSIFICATION
 # ====================================================
 
 def classify_transaction(text, amount, previous_balance=None, current_balance=None):
 
     text = text.lower()
 
-    # 1️⃣ Credit keywords
     for keyword in CREDIT_KEYWORDS:
         if keyword in text:
             return 0, amount
 
-    # 2️⃣ Debit keywords
     for keyword in DEBIT_KEYWORDS:
         if keyword in text:
             return amount, 0
 
-    # 3️⃣ Balance movement rule
+    # Balance movement fallback
     if previous_balance is not None and current_balance is not None:
 
         if current_balance > previous_balance:
@@ -167,5 +165,53 @@ def classify_transaction(text, amount, previous_balance=None, current_balance=No
         if current_balance < previous_balance:
             return amount, 0
 
-    # 4️⃣ Default fallback
     return 0, amount
+
+
+# ====================================================
+# BALANCE VALIDATION ENGINE
+# ====================================================
+
+def validate_balance_flow(transactions):
+
+    if not transactions:
+        return transactions
+
+    corrected = []
+
+    prev_balance = None
+
+    for txn in transactions:
+
+        debit = txn["debit"]
+        credit = txn["credit"]
+        balance = txn["balance"]
+
+        if prev_balance is not None:
+
+            expected_balance = prev_balance + credit - debit
+
+            # If mismatch, swap debit/credit
+            if abs(expected_balance - balance) > 1:
+
+                corrected_debit = credit
+                corrected_credit = debit
+
+                expected_balance = prev_balance + corrected_credit - corrected_debit
+
+                if abs(expected_balance - balance) < 1:
+
+                    debit = corrected_debit
+                    credit = corrected_credit
+
+        corrected.append({
+            "date": txn["date"],
+            "description": txn["description"],
+            "debit": debit,
+            "credit": credit,
+            "balance": balance
+        })
+
+        prev_balance = balance
+
+    return corrected
