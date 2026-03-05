@@ -1,6 +1,6 @@
 import pdfplumber
-from io import BytesIO
 import re
+from io import BytesIO
 
 
 # =============================================
@@ -9,119 +9,206 @@ import re
 
 def parse_banking_file(file_bytes, filename):
 
-    filename = filename.lower()
+    bank = detect_bank(file_bytes)
 
-    if not filename.endswith(".pdf"):
-        raise ValueError("Only PDF supported")
+    if bank == "hdfc":
+        txns = parse_hdfc(file_bytes)
 
-    text = extract_full_text(file_bytes)
+    elif bank == "sbi":
+        txns = parse_sbi(file_bytes)
 
-    transactions = extract_transactions(text)
+    elif bank == "icici":
+        txns = parse_icici(file_bytes)
 
-    return transactions
+    elif bank == "axis":
+        txns = parse_axis(file_bytes)
+
+    elif bank == "kotak":
+        txns = parse_kotak(file_bytes)
+
+    else:
+        txns = universal_parser(file_bytes)
+
+    return txns
 
 
 # =============================================
-# EXTRACT FULL TEXT
+# BANK DETECTION
 # =============================================
 
-def extract_full_text(file_bytes):
-
-    text = ""
+def detect_bank(file_bytes):
 
     with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
 
-    return text
+        text = pdf.pages[0].extract_text().lower()
+
+        if "hdfc bank" in text:
+            return "hdfc"
+
+        if "state bank of india" in text:
+            return "sbi"
+
+        if "icici bank" in text:
+            return "icici"
+
+        if "axis bank" in text:
+            return "axis"
+
+        if "kotak mahindra bank" in text:
+            return "kotak"
+
+    return "unknown"
 
 
 # =============================================
-# SMART TRANSACTION EXTRACTION (HDFC Compatible)
+# SAFE FLOAT
 # =============================================
 
-def extract_transactions(text):
+def to_float(val):
+
+    try:
+        return float(str(val).replace(",", "").strip())
+    except:
+        return 0.0
+
+
+# =============================================
+# HDFC PARSER
+# =============================================
+
+def parse_hdfc(file_bytes):
 
     transactions = []
-    lines = text.split("\n")
 
-    current_txn = None
+    with pdfplumber.open(BytesIO(file_bytes)) as pdf:
 
-    for line in lines:
+        for page in pdf.pages:
 
-        clean_line = line.strip()
-        lower_line = clean_line.lower()
+            tables = page.extract_tables()
 
-        # Skip obvious non-transaction lines
-        if any(skip in lower_line for skip in [
-            "statement of account",
-            "account branch",
-            "opening balance",
-            "closing balance",
-            "statement summary",
-            "generated on",
-            "page no",
-            "hdfc bank limited",
-            "ifsc",
-            "micr",
-            "address",
-            "nomination"
-        ]):
-            continue
+            for table in tables:
 
-        # Detect new transaction by date
-        date_match = re.match(r"\d{2}/\d{2}/\d{2}", clean_line)
+                for row in table:
 
-        if date_match:
+                    if not row or len(row) < 7:
+                        continue
 
-            # Save previous txn
-            if current_txn:
-                transactions.append(current_txn)
+                    if "date" in str(row[0]).lower():
+                        continue
 
-            numbers = re.findall(r"-?\d{1,3}(?:,\d{3})*(?:\.\d+)?", clean_line)
+                    date = str(row[0]).strip()
 
-            if len(numbers) < 2:
-                continue
+                    if "/" not in date:
+                        continue
 
-            # Last number is usually closing balance
-            balance = float(numbers[-1].replace(",", ""))
+                    narration = str(row[1]).strip()
 
-            # Second last number is transaction amount
-            amount = float(numbers[-2].replace(",", ""))
+                    debit = to_float(row[4])
+                    credit = to_float(row[5])
+                    balance = to_float(row[6])
 
-            debit = 0
-            credit = 0
-
-            # Determine debit/credit
-            # If balance decreased → debit
-            # If balance increased → credit
-            # Since we don't know previous balance here,
-            # use keyword logic fallback
-
-            if any(word in lower_line for word in [
-                "upi", "ach", "o-mf", "debit", "payment", "billpay"
-            ]):
-                debit = amount
-            else:
-                credit = amount
-
-            current_txn = {
-                "date": date_match.group(),
-                "description": clean_line,
-                "debit": debit,
-                "credit": credit,
-                "balance": balance
-            }
-
-        else:
-            # Continuation line → append to description
-            if current_txn:
-                current_txn["description"] += " " + clean_line
-
-    # Append last transaction
-    if current_txn:
-        transactions.append(current_txn)
+                    transactions.append({
+                        "date": date,
+                        "description": narration,
+                        "debit": debit,
+                        "credit": credit,
+                        "balance": balance
+                    })
 
     return transactions
+
+
+# =============================================
+# GENERIC BANK PARSER (SBI/ICICI/AXIS/KOTAK)
+# =============================================
+
+def parse_sbi(file_bytes):
+    return universal_parser(file_bytes)
+
+
+def parse_icici(file_bytes):
+    return universal_parser(file_bytes)
+
+
+def parse_axis(file_bytes):
+    return universal_parser(file_bytes)
+
+
+def parse_kotak(file_bytes):
+    return universal_parser(file_bytes)
+
+
+# =============================================
+# UNIVERSAL FALLBACK PARSER
+# =============================================
+
+def universal_parser(file_bytes):
+
+    transactions = []
+
+    with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+
+        for page in pdf.pages:
+
+            text = page.extract_text()
+
+            if not text:
+                continue
+
+            lines = text.split("\n")
+
+            for line in lines:
+
+                if re.match(r"\d{2}/\d{2}/\d{2}", line):
+
+                    nums = re.findall(r"\d+(?:,\d+)*(?:\.\d+)?", line)
+
+                    if len(nums) < 2:
+                        continue
+
+                    balance = float(nums[-1].replace(",", ""))
+                    amount = float(nums[-2].replace(",", ""))
+
+                    if detect_debit(line):
+                        debit = amount
+                        credit = 0
+                    else:
+                        credit = amount
+                        debit = 0
+
+                    transactions.append({
+                        "date": line[:8],
+                        "description": line,
+                        "debit": debit,
+                        "credit": credit,
+                        "balance": balance
+                    })
+
+    return transactions
+
+
+# =============================================
+# DEBIT DETECTOR
+# =============================================
+
+def detect_debit(text):
+
+    text = text.lower()
+
+    keywords = [
+        "upi",
+        "ach",
+        "payment",
+        "debit",
+        "bill",
+        "atm",
+        "withdraw",
+        "pos",
+        "transfer"
+    ]
+
+    for k in keywords:
+        if k in text:
+            return True
+
+    return False
