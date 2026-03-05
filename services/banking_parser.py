@@ -155,16 +155,28 @@ def universal_parser(file_bytes):
 # CLASSIFIER
 # =====================================
 
-def classify_transaction(text, amount):
+def classify_transaction(text, amount, previous_balance=None, current_balance=None):
 
     text = text.lower()
 
+    # 1️⃣ Credit keyword check
     for k in CREDIT_KEYWORDS:
         if k in text:
             return 0, amount
 
+    # 2️⃣ Debit keyword check
     for k in DEBIT_KEYWORDS:
         if k in text:
             return amount, 0
 
-    return amount, 0
+    # 3️⃣ Balance validation fallback
+    if previous_balance is not None and current_balance is not None:
+
+        if current_balance > previous_balance:
+            return 0, amount
+
+        if current_balance < previous_balance:
+            return amount, 0
+
+    # 4️⃣ Final fallback (neutral)
+    return 0, amount
