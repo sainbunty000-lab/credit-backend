@@ -3,9 +3,9 @@ import re
 from io import BytesIO
 
 
-# =========================================
+# =====================================
 # MAIN ENTRY
-# =========================================
+# =====================================
 
 def parse_banking_file(file_bytes):
 
@@ -15,28 +15,51 @@ def parse_banking_file(file_bytes):
 
         for page in pdf.pages:
 
-            table = page.extract_table()
+            text = page.extract_text()
 
-            if not table:
+            if not text:
                 continue
 
-            header = [str(c).lower() for c in table[0]]
+            lines = text.split("\n")
 
-            for row in table[1:]:
+            for line in lines:
 
-                if not row or len(row) < 6:
+                # Detect transaction line
+                if not re.match(r"\d{2}/\d{2}/\d{2}", line):
                     continue
 
-                date = str(row[0]).strip()
+                parts = line.split()
 
-                if not re.match(r"\d{2}/\d{2}/\d{2}", date):
+                if len(parts) < 4:
                     continue
 
-                narration = str(row[1]).strip()
+                date = parts[0]
 
-                debit = to_float(row[4])
-                credit = to_float(row[5])
-                balance = to_float(row[6]) if len(row) > 6 else 0
+                numbers = re.findall(r"\d+(?:,\d+)*(?:\.\d+)?", line)
+
+                if len(numbers) < 2:
+                    continue
+
+                balance = to_float(numbers[-1])
+                amount = to_float(numbers[-2])
+
+                debit = 0
+                credit = 0
+
+                # Determine debit/credit using balance movement
+                if transactions:
+
+                    prev_balance = transactions[-1]["balance"]
+
+                    if balance > prev_balance:
+                        credit = amount
+                    else:
+                        debit = amount
+
+                else:
+                    credit = amount
+
+                narration = line[len(date):].strip()
 
                 transactions.append({
                     "date": date,
@@ -49,9 +72,9 @@ def parse_banking_file(file_bytes):
     return transactions
 
 
-# =========================================
+# =====================================
 # SAFE FLOAT
-# =========================================
+# =====================================
 
 def to_float(val):
 
