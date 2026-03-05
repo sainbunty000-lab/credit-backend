@@ -13,6 +13,7 @@ def analyze_banking(transactions):
     salary_income = 0
     upi_spend = 0
     bounce = 0
+    negative_balance = 0
 
     monthly_credit = defaultdict(float)
     monthly_debit = defaultdict(float)
@@ -47,6 +48,9 @@ def analyze_banking(transactions):
         if "return" in desc or "bounce" in desc:
             bounce += 1
 
+        if balance < 0:
+            negative_balance += 1
+
         month = extract_month(txn["date"])
 
         if month:
@@ -68,6 +72,7 @@ def analyze_banking(transactions):
         score -= 20
 
     score -= bounce * 10
+    score -= negative_balance * 10
 
     score = max(0, min(score, 100))
 
@@ -89,8 +94,8 @@ def analyze_banking(transactions):
     return {
 
         "statement_period": {
-            "from": min(dates),
-            "to": max(dates)
+            "from": min(dates) if dates else None,
+            "to": max(dates) if dates else None
         },
 
         "statement_summary": {
@@ -112,7 +117,8 @@ def analyze_banking(transactions):
         },
 
         "behavior_analysis": {
-            "bounce_count": bounce
+            "bounce_count": bounce,
+            "negative_balance_count": negative_balance
         },
 
         "risk_summary": {
