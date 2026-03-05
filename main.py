@@ -15,6 +15,9 @@ from services.agriculture_service import calculate_agri_logic
 from services.banking_parser import parse_banking_file
 from services.analyzer import analyze_transactions   # Enterprise analyzer
 
+# NEW: CAM Dashboard
+from services.cam_service import router as cam_router
+
 
 # ==========================
 # APP INIT
@@ -22,7 +25,7 @@ from services.analyzer import analyze_transactions   # Enterprise analyzer
 
 app = FastAPI(
     title="Credit Intelligence Engine",
-    version="2.2.1"
+    version="2.2.2"
 )
 
 app.add_middleware(
@@ -32,6 +35,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ==========================
+# REGISTER CAM ROUTER
+# ==========================
+
+app.include_router(cam_router)
 
 
 # ==========================
@@ -109,7 +119,7 @@ async def banking_full_analysis(file: UploadFile = File(...)):
         file_bytes = await file.read()
 
         # Step 1 → Parse PDF into transactions
-        transactions = parse_banking_file(file_bytes)   # ✅ FIXED
+        transactions = parse_banking_file(file_bytes)
 
         if not transactions:
             return {
@@ -142,10 +152,11 @@ def health():
 
     return {
         "status": "Backend Active",
-        "version": "2.2.1",
+        "version": "2.2.2",
         "modules": {
             "working_capital": "active",
             "agriculture": "active",
-            "banking": "enterprise_enabled"
+            "banking": "enterprise_enabled",
+            "cam_dashboard": "active"
         }
     }
