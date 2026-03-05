@@ -19,5 +19,8 @@ python-dotenv
 
 reportlab
 
-camelot-py
+camelot-py[cv]
 opencv-python-headless
+
+sqlalchemy
+psycopg2-binary
