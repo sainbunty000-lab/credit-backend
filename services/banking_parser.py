@@ -11,42 +11,9 @@ from .banking_dictionary import CREDIT_KEYWORDS, DEBIT_KEYWORDS
 
 def parse_banking_file(file_bytes):
 
-    bank = detect_bank(file_bytes)
-
-    if bank == "hdfc":
-        transactions = parse_hdfc(file_bytes)
-    else:
-        transactions = universal_parser(file_bytes)
+    transactions = universal_parser(file_bytes)
 
     return transactions
-
-
-# =====================================
-# BANK DETECTION
-# =====================================
-
-def detect_bank(file_bytes):
-
-    with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-
-        text = pdf.pages[0].extract_text().lower()
-
-        if "hdfc bank" in text:
-            return "hdfc"
-
-        if "state bank of india" in text:
-            return "sbi"
-
-        if "icici bank" in text:
-            return "icici"
-
-        if "axis bank" in text:
-            return "axis"
-
-        if "kotak mahindra bank" in text:
-            return "kotak"
-
-    return "unknown"
 
 
 # =====================================
@@ -58,53 +25,7 @@ def to_float(val):
     try:
         return float(str(val).replace(",", "").strip())
     except:
-        return 0
-
-
-# =====================================
-# HDFC TABLE PARSER
-# =====================================
-
-def parse_hdfc(file_bytes):
-
-    transactions = []
-
-    with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-
-        for page in pdf.pages:
-
-            tables = page.extract_tables()
-
-            for table in tables:
-
-                for row in table:
-
-                    if not row or len(row) < 7:
-                        continue
-
-                    if "date" in str(row[0]).lower():
-                        continue
-
-                    date = str(row[0]).strip()
-
-                    if "/" not in date:
-                        continue
-
-                    narration = str(row[1]).strip()
-
-                    debit = to_float(row[4])
-                    credit = to_float(row[5])
-                    balance = to_float(row[6])
-
-                    transactions.append({
-                        "date": date,
-                        "description": narration,
-                        "debit": debit,
-                        "credit": credit,
-                        "balance": balance
-                    })
-
-    return transactions
+        return 0.0
 
 
 # =====================================
@@ -128,55 +49,67 @@ def universal_parser(file_bytes):
 
             for line in lines:
 
-                if re.match(r"\d{2}/\d{2}/\d{2}", line):
+                if not re.match(r"\d{2}/\d{2}/\d{2}", line):
+                    continue
 
-                    numbers = re.findall(r"\d+(?:,\d+)*(?:\.\d+)?", line)
+                numbers = re.findall(r"\d+(?:,\d+)*(?:\.\d+)?", line)
 
-                    if len(numbers) < 2:
-                        continue
+                if len(numbers) < 2:
+                    continue
 
-                    balance = float(numbers[-1].replace(",", ""))
-                    amount = float(numbers[-2].replace(",", ""))
+                balance = to_float(numbers[-1])
+                amount = to_float(numbers[-2])
 
-                    prev_balance = transactions[-1]["balance"] if transactions else None
+                previous_balance = (
+                    transactions[-1]["balance"] if transactions else None
+                )
 
-debit, credit = classify_transaction(
-    line,
-    amount,
-    prev_balance,
-    balance
-)
+                debit, credit = classify_transaction(
+                    line,
+                    amount,
+                    previous_balance,
+                    balance
+                )
 
-                    transactions.append({
-                        "date": line[:8],
-                        "description": line,
-                        "debit": debit,
-                        "credit": credit,
-                        "balance": balance
-                    })
+                transactions.append({
+                    "date": line[:8],
+                    "description": line.strip(),
+                    "debit": debit,
+                    "credit": credit,
+                    "balance": balance
+                })
 
     return transactions
 
 
 # =====================================
-# CLASSIFIER
+# CLASSIFICATION ENGINE
 # =====================================
 
 def classify_transaction(text, amount, previous_balance=None, current_balance=None):
 
     text = text.lower()
 
-    # 1️⃣ Credit keyword check
-    for k in CREDIT_KEYWORDS:
-        if k in text:
+    # --------------------------------
+    # Credit keywords
+    # --------------------------------
+
+    for keyword in CREDIT_KEYWORDS:
+        if keyword in text:
             return 0, amount
 
-    # 2️⃣ Debit keyword check
-    for k in DEBIT_KEYWORDS:
-        if k in text:
+    # --------------------------------
+    # Debit keywords
+    # --------------------------------
+
+    for keyword in DEBIT_KEYWORDS:
+        if keyword in text:
             return amount, 0
 
-    # 3️⃣ Balance validation fallback
+    # --------------------------------
+    # Balance rule fallback
+    # --------------------------------
+
     if previous_balance is not None and current_balance is not None:
 
         if current_balance > previous_balance:
@@ -185,5 +118,8 @@ def classify_transaction(text, amount, previous_balance=None, current_balance=No
         if current_balance < previous_balance:
             return amount, 0
 
-    # 4️⃣ Final fallback (neutral)
+    # --------------------------------
+    # Default fallback
+    # --------------------------------
+
     return 0, amount
