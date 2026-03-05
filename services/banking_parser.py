@@ -2,39 +2,28 @@ import pdfplumber
 import re
 from io import BytesIO
 
+from .banking_dictionary import CREDIT_KEYWORDS, DEBIT_KEYWORDS
 
-# =============================================
+
+# =====================================
 # MAIN ENTRY
-# =============================================
+# =====================================
 
-def parse_banking_file(file_bytes, filename):
+def parse_banking_file(file_bytes):
 
     bank = detect_bank(file_bytes)
 
     if bank == "hdfc":
-        txns = parse_hdfc(file_bytes)
-
-    elif bank == "sbi":
-        txns = parse_sbi(file_bytes)
-
-    elif bank == "icici":
-        txns = parse_icici(file_bytes)
-
-    elif bank == "axis":
-        txns = parse_axis(file_bytes)
-
-    elif bank == "kotak":
-        txns = parse_kotak(file_bytes)
-
+        transactions = parse_hdfc(file_bytes)
     else:
-        txns = universal_parser(file_bytes)
+        transactions = universal_parser(file_bytes)
 
-    return txns
+    return transactions
 
 
-# =============================================
+# =====================================
 # BANK DETECTION
-# =============================================
+# =====================================
 
 def detect_bank(file_bytes):
 
@@ -60,21 +49,21 @@ def detect_bank(file_bytes):
     return "unknown"
 
 
-# =============================================
+# =====================================
 # SAFE FLOAT
-# =============================================
+# =====================================
 
 def to_float(val):
 
     try:
         return float(str(val).replace(",", "").strip())
     except:
-        return 0.0
+        return 0
 
 
-# =============================================
-# HDFC PARSER
-# =============================================
+# =====================================
+# HDFC TABLE PARSER
+# =====================================
 
 def parse_hdfc(file_bytes):
 
@@ -118,29 +107,9 @@ def parse_hdfc(file_bytes):
     return transactions
 
 
-# =============================================
-# GENERIC BANK PARSER (SBI/ICICI/AXIS/KOTAK)
-# =============================================
-
-def parse_sbi(file_bytes):
-    return universal_parser(file_bytes)
-
-
-def parse_icici(file_bytes):
-    return universal_parser(file_bytes)
-
-
-def parse_axis(file_bytes):
-    return universal_parser(file_bytes)
-
-
-def parse_kotak(file_bytes):
-    return universal_parser(file_bytes)
-
-
-# =============================================
-# UNIVERSAL FALLBACK PARSER
-# =============================================
+# =====================================
+# UNIVERSAL PARSER
+# =====================================
 
 def universal_parser(file_bytes):
 
@@ -161,20 +130,15 @@ def universal_parser(file_bytes):
 
                 if re.match(r"\d{2}/\d{2}/\d{2}", line):
 
-                    nums = re.findall(r"\d+(?:,\d+)*(?:\.\d+)?", line)
+                    numbers = re.findall(r"\d+(?:,\d+)*(?:\.\d+)?", line)
 
-                    if len(nums) < 2:
+                    if len(numbers) < 2:
                         continue
 
-                    balance = float(nums[-1].replace(",", ""))
-                    amount = float(nums[-2].replace(",", ""))
+                    balance = float(numbers[-1].replace(",", ""))
+                    amount = float(numbers[-2].replace(",", ""))
 
-                    if detect_debit(line):
-                        debit = amount
-                        credit = 0
-                    else:
-                        credit = amount
-                        debit = 0
+                    debit, credit = classify_transaction(line, amount)
 
                     transactions.append({
                         "date": line[:8],
@@ -187,28 +151,20 @@ def universal_parser(file_bytes):
     return transactions
 
 
-# =============================================
-# DEBIT DETECTOR
-# =============================================
+# =====================================
+# CLASSIFIER
+# =====================================
 
-def detect_debit(text):
+def classify_transaction(text, amount):
 
     text = text.lower()
 
-    keywords = [
-        "upi",
-        "ach",
-        "payment",
-        "debit",
-        "bill",
-        "atm",
-        "withdraw",
-        "pos",
-        "transfer"
-    ]
-
-    for k in keywords:
+    for k in CREDIT_KEYWORDS:
         if k in text:
-            return True
+            return 0, amount
 
-    return False
+    for k in DEBIT_KEYWORDS:
+        if k in text:
+            return amount, 0
+
+    return amount, 0
