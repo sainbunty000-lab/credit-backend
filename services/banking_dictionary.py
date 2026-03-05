@@ -7,7 +7,7 @@ CREDIT_KEYWORDS = [
     # Salary
     "salary", "salary credit", "sal credit",
 
-    # Transfers received
+    # Transfers
     "transfer from", "imps credit", "neft credit", "rtgs credit",
 
     # Deposits
@@ -19,32 +19,29 @@ CREDIT_KEYWORDS = [
     # Investments
     "redemption", "mf redemption", "dividend",
 
-    # Cashback / rewards
+    # Cashback
     "cashback", "reward",
 
     # Interest
     "interest", "interest credit",
 
-    # Settlement
-    "settlement",
-
-    # Incoming payments
+    # Incoming
     "received", "incoming",
 
-    # Business income
+    # Business
     "commission", "bonus", "incentive", "reimbursement"
 ]
 
 
 DEBIT_KEYWORDS = [
 
-    # UPI / wallets
-    "upi", "paytm", "phonepe", "gpay", "amazon pay", "bharatpe",
+    # UPI / Wallets
+    "upi", "paytm", "phonepe", "gpay", "amazon pay",
 
     # Payments
     "payment", "bill", "billpay",
 
-    # ATM / withdrawal
+    # ATM
     "atm", "withdraw", "cash withdrawal",
 
     # Card
@@ -53,21 +50,18 @@ DEBIT_KEYWORDS = [
     # Transfers
     "transfer", "neft", "rtgs", "imps",
 
-    # EMI / loans
+    # EMI
     "emi", "loan", "finance", "capital",
 
     # Investments
-    "sip", "o-mf", "mutual fund purchase",
+    "sip", "o-mf",
 
     # Ecommerce
-    "amazon", "flipkart", "swiggy", "zomato", "zepto",
+    "amazon", "flipkart", "swiggy", "zomato",
 
     # Charges
-    "charges", "service charge", "bank charge",
+    "charges", "bank charge",
 
-    # Taxes
-    "gst payment", "tds payment",
-
-    # Others
-    "insurance", "premium", "rent", "school fee"
+    # Expenses
+    "insurance", "premium", "rent"
 ]
