@@ -1,69 +1,120 @@
 import pandas as pd
 import pdfplumber
 import pytesseract
+import re
+
 from pdf2image import convert_from_bytes
 from io import BytesIO
 from services.accounting_dictionary import ACCOUNTING_KEYWORDS
 
 
 # ==========================================================
-# MAIN ENTRY FUNCTION
+# MAIN ENTRY
 # ==========================================================
+
 def parse_financial_file(file, filename):
 
     try:
         file_bytes = file.read()
-    except Exception:
+    except:
         file_bytes = file
 
     filename = filename.lower()
 
-    # ===================================
+    # ======================================
     # CSV
-    # ===================================
+    # ======================================
     if filename.endswith(".csv"):
+
         df = pd.read_csv(BytesIO(file_bytes))
         return extract_from_dataframe(df)
 
-    # ===================================
+
+    # ======================================
     # XLSX
-    # ===================================
+    # ======================================
     elif filename.endswith(".xlsx"):
+
         df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
         return extract_from_dataframe(df)
 
-    # ===================================
+
+    # ======================================
     # XLS
-    # ===================================
+    # ======================================
     elif filename.endswith(".xls"):
+
         df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
         return extract_from_dataframe(df)
 
-    # ===================================
-    # PDF (Text Based Only – No OCR)
-    # ===================================
+
+    # ======================================
+    # PDF
+    # ======================================
     elif filename.endswith(".pdf"):
 
-        text = ""
+        text = extract_pdf_text(file_bytes)
 
-        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-            for page in pdf.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    text += extracted + "\n"
-
+        # If no text → scanned document
         if not text.strip():
-            raise ValueError("No readable text found in PDF")
+
+            text = extract_pdf_ocr(file_bytes)
 
         return extract_from_text(text)
+
 
     else:
         raise ValueError("Unsupported file type")
 
 
 # ==========================================================
-# Extract from Excel / CSV
+# PDF TEXT EXTRACTION
 # ==========================================================
+
+def extract_pdf_text(file_bytes):
+
+    text = ""
+
+    try:
+
+        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+
+            for page in pdf.pages:
+
+                page_text = page.extract_text()
+
+                if page_text:
+                    text += page_text + "\n"
+
+    except:
+        pass
+
+    return text
+
+
+# ==========================================================
+# OCR EXTRACTION (FOR SCANNED PDF)
+# ==========================================================
+
+def extract_pdf_ocr(file_bytes):
+
+    text = ""
+
+    images = convert_from_bytes(file_bytes)
+
+    for img in images:
+
+        ocr_text = pytesseract.image_to_string(img)
+
+        text += ocr_text + "\n"
+
+    return text
+
+
+# ==========================================================
+# EXTRACT FROM DATAFRAME
+# ==========================================================
+
 def extract_from_dataframe(df):
 
     result = {}
@@ -77,19 +128,11 @@ def extract_from_dataframe(df):
 
             for keyword in keywords:
 
-                normalized_keyword = keyword.lower().replace(" ", "")
+                keyword_norm = keyword.lower().replace(" ", "")
 
-                if normalized_keyword in normalized_row:
+                if keyword_norm in normalized_row:
 
-                    numbers = []
-
-                    for v in row.values:
-                        try:
-                            clean_val = str(v).replace(",", "")
-                            num = float(clean_val)
-                            numbers.append(num)
-                        except:
-                            continue
+                    numbers = extract_numbers(row.values)
 
                     if numbers:
                         result[key] = numbers[-1]
@@ -98,11 +141,13 @@ def extract_from_dataframe(df):
 
 
 # ==========================================================
-# Extract from PDF Text
+# EXTRACT FROM TEXT
 # ==========================================================
+
 def extract_from_text(text):
 
     result = {}
+
     lines = text.split("\n")
 
     for line in lines:
@@ -114,20 +159,40 @@ def extract_from_text(text):
 
             for keyword in keywords:
 
-                normalized_keyword = keyword.lower().replace(" ", "")
+                keyword_norm = keyword.lower().replace(" ", "")
 
-                if normalized_keyword in normalized_line:
+                if keyword_norm in normalized_line:
 
-                    numbers = []
-
-                    for word in clean_line.split():
-                        try:
-                            num = float(word)
-                            numbers.append(num)
-                        except:
-                            continue
+                    numbers = extract_numbers([line])
 
                     if numbers:
                         result[key] = numbers[-1]
 
     return result
+
+
+# ==========================================================
+# NUMBER EXTRACTION
+# ==========================================================
+
+def extract_numbers(values):
+
+    numbers = []
+
+    for v in values:
+
+        text = str(v)
+
+        # remove commas
+        text = text.replace(",", "")
+
+        matches = re.findall(r"-?\d+\.?\d*", text)
+
+        for m in matches:
+
+            try:
+                numbers.append(float(m))
+            except:
+                pass
+
+    return numbers
