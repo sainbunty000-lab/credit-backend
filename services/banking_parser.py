@@ -138,7 +138,14 @@ def universal_parser(file_bytes):
                     balance = float(numbers[-1].replace(",", ""))
                     amount = float(numbers[-2].replace(",", ""))
 
-                    debit, credit = classify_transaction(line, amount)
+                    prev_balance = transactions[-1]["balance"] if transactions else None
+
+debit, credit = classify_transaction(
+    line,
+    amount,
+    prev_balance,
+    balance
+)
 
                     transactions.append({
                         "date": line[:8],
