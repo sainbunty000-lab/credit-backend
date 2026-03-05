@@ -5,32 +5,90 @@ from io import BytesIO
 from .banking_dictionary import CREDIT_KEYWORDS, DEBIT_KEYWORDS
 
 
-# =====================================
+# ====================================================
 # MAIN ENTRY
-# =====================================
+# ====================================================
 
 def parse_banking_file(file_bytes):
 
-    transactions = universal_parser(file_bytes)
+    # 1️⃣ Try structured table extraction
+    transactions = parse_table_statement(file_bytes)
 
-    return transactions
+    if transactions:
+        return transactions
+
+    # 2️⃣ Fallback universal parser
+    return universal_parser(file_bytes)
 
 
-# =====================================
+# ====================================================
 # SAFE FLOAT
-# =====================================
+# ====================================================
 
-def to_float(val):
+def to_float(value):
 
     try:
-        return float(str(val).replace(",", "").strip())
+        return float(str(value).replace(",", "").strip())
     except:
         return 0.0
 
 
-# =====================================
-# UNIVERSAL PARSER
-# =====================================
+# ====================================================
+# TABLE PARSER (BEST ACCURACY)
+# ====================================================
+
+def parse_table_statement(file_bytes):
+
+    transactions = []
+
+    with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+
+        for page in pdf.pages:
+
+            tables = page.extract_tables()
+
+            if not tables:
+                continue
+
+            for table in tables:
+
+                for row in table:
+
+                    if not row or len(row) < 6:
+                        continue
+
+                    # Skip header rows
+                    if "date" in str(row[0]).lower():
+                        continue
+
+                    date = str(row[0]).strip()
+
+                    if "/" not in date:
+                        continue
+
+                    narration = str(row[1]).strip()
+
+                    withdrawal = to_float(row[4])
+                    deposit = to_float(row[5])
+
+                    balance = 0
+                    if len(row) > 6:
+                        balance = to_float(row[6])
+
+                    transactions.append({
+                        "date": date,
+                        "description": narration,
+                        "debit": withdrawal,
+                        "credit": deposit,
+                        "balance": balance
+                    })
+
+    return transactions
+
+
+# ====================================================
+# UNIVERSAL PARSER (FALLBACK)
+# ====================================================
 
 def universal_parser(file_bytes):
 
@@ -82,34 +140,25 @@ def universal_parser(file_bytes):
     return transactions
 
 
-# =====================================
+# ====================================================
 # CLASSIFICATION ENGINE
-# =====================================
+# ====================================================
 
 def classify_transaction(text, amount, previous_balance=None, current_balance=None):
 
     text = text.lower()
 
-    # --------------------------------
-    # Credit keywords
-    # --------------------------------
-
+    # 1️⃣ Credit keywords
     for keyword in CREDIT_KEYWORDS:
         if keyword in text:
             return 0, amount
 
-    # --------------------------------
-    # Debit keywords
-    # --------------------------------
-
+    # 2️⃣ Debit keywords
     for keyword in DEBIT_KEYWORDS:
         if keyword in text:
             return amount, 0
 
-    # --------------------------------
-    # Balance rule fallback
-    # --------------------------------
-
+    # 3️⃣ Balance movement rule
     if previous_balance is not None and current_balance is not None:
 
         if current_balance > previous_balance:
@@ -118,8 +167,5 @@ def classify_transaction(text, amount, previous_balance=None, current_balance=No
         if current_balance < previous_balance:
             return amount, 0
 
-    # --------------------------------
-    # Default fallback
-    # --------------------------------
-
+    # 4️⃣ Default fallback
     return 0, amount
