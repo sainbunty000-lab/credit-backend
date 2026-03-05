@@ -13,7 +13,7 @@ from services.wc_service import calculate_wc_logic
 from services.agriculture_service import calculate_agri_logic
 
 from services.banking_parser import parse_banking_file
-from services.analyzer import analyze_transactions   # ✅ Updated Layer
+from services.analyzer import analyze_transactions   # Enterprise analyzer
 
 
 # ==========================
@@ -22,7 +22,7 @@ from services.analyzer import analyze_transactions   # ✅ Updated Layer
 
 app = FastAPI(
     title="Credit Intelligence Engine",
-    version="2.2.0"
+    version="2.2.1"
 )
 
 app.add_middleware(
@@ -43,7 +43,7 @@ class BankingAnalyzeRequest(BaseModel):
 
 
 # ==========================
-# WORKING CAPITAL (UNCHANGED)
+# WORKING CAPITAL
 # ==========================
 
 @app.post("/wc/upload-dual")
@@ -81,11 +81,12 @@ async def wc_manual_calc(data: dict):
 
 
 # ==========================
-# AGRICULTURE (UNCHANGED)
+# AGRICULTURE
 # ==========================
 
 @app.post("/agriculture/calculate")
 async def agri_calc(data: dict):
+
     return calculate_agri_logic(
         data.get("documented_income", 0),
         data.get("tax", 0),
@@ -97,16 +98,18 @@ async def agri_calc(data: dict):
 
 
 # ==========================
-# BANKING (ENTERPRISE VERSION)
+# BANKING ANALYSIS
 # ==========================
 
 @app.post("/banking/full-analysis")
 async def banking_full_analysis(file: UploadFile = File(...)):
+
     try:
+
         file_bytes = await file.read()
 
         # Step 1 → Parse PDF into transactions
-        transactions = parse_banking_file(file_bytes, file.filename)
+        transactions = parse_banking_file(file_bytes)   # ✅ FIXED
 
         if not transactions:
             return {
@@ -114,7 +117,7 @@ async def banking_full_analysis(file: UploadFile = File(...)):
                 "error": "No transactions detected in statement."
             }
 
-        # Step 2 → Enterprise Analyzer Layer
+        # Step 2 → Enterprise Analyzer
         result = analyze_transactions(transactions)
 
         return {
@@ -123,6 +126,7 @@ async def banking_full_analysis(file: UploadFile = File(...)):
         }
 
     except Exception as e:
+
         return {
             "success": False,
             "error": str(e)
@@ -135,9 +139,10 @@ async def banking_full_analysis(file: UploadFile = File(...)):
 
 @app.get("/")
 def health():
+
     return {
         "status": "Backend Active",
-        "version": "2.2.0",
+        "version": "2.2.1",
         "modules": {
             "working_capital": "active",
             "agriculture": "active",
