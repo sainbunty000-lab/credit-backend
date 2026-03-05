@@ -7,12 +7,13 @@ ENV PYTHONUNBUFFERED=1
 # ===============================
 # Install System Dependencies
 # ===============================
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     ghostscript \
     poppler-utils \
     tesseract-ocr \
+    tesseract-ocr-eng \
     libtesseract-dev \
     libgl1 \
     libglib2.0-0 \
@@ -27,13 +28,14 @@ RUN apt-get update && apt-get install -y \
 # ===============================
 WORKDIR /app
 
-# Copy only requirements first (better caching)
+# Copy requirements first (for caching)
 COPY requirements.txt .
 
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy full app
+# Copy application code
 COPY . .
 
 # ===============================
