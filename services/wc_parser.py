@@ -60,6 +60,36 @@ def parse_financial_file(file, filename):
 
 
 # ==========================================================
+# DETECT BALANCE SHEET / P&L PAGES
+# ==========================================================
+
+def is_financial_page(text):
+
+    keywords = [
+        "balance sheet",
+        "statement of profit",
+        "profit and loss",
+        "revenue from operations",
+        "total income",
+        "trade receivables",
+        "current assets",
+        "current liabilities",
+        "inventory",
+        "share capital"
+    ]
+
+    text = text.lower()
+
+    score = 0
+
+    for k in keywords:
+        if k in text:
+            score += 1
+
+    return score >= 2
+
+
+# ==========================================================
 # PDF TEXT EXTRACTION
 # ==========================================================
 
@@ -68,13 +98,15 @@ def extract_pdf_text(file_bytes):
     text = ""
 
     try:
+
         with pdfplumber.open(BytesIO(file_bytes)) as pdf:
 
             for page in pdf.pages:
 
                 page_text = page.extract_text()
 
-                if page_text:
+                if page_text and is_financial_page(page_text):
+
                     text += page_text + "\n"
 
     except:
@@ -84,7 +116,7 @@ def extract_pdf_text(file_bytes):
 
 
 # ==========================================================
-# OCR EXTRACTION (SCANNED PDF)
+# OCR FOR SCANNED PDF
 # ==========================================================
 
 def extract_pdf_ocr(file_bytes):
@@ -95,12 +127,10 @@ def extract_pdf_ocr(file_bytes):
 
     for img in images:
 
-        ocr_text = pytesseract.image_to_string(
-            img,
-            config="--psm 6"
-        )
+        ocr_text = pytesseract.image_to_string(img, config="--psm 6")
 
-        text += ocr_text + "\n"
+        if is_financial_page(ocr_text):
+            text += ocr_text + "\n"
 
     return text
 
@@ -115,10 +145,7 @@ def extract_image_ocr(file_bytes):
 
         image = Image.open(BytesIO(file_bytes))
 
-        text = pytesseract.image_to_string(
-            image,
-            config="--psm 6"
-        )
+        text = pytesseract.image_to_string(image, config="--psm 6")
 
         return text
 
@@ -127,7 +154,7 @@ def extract_image_ocr(file_bytes):
 
 
 # ==========================================================
-# DETECT UNIT SCALE
+# DETECT NUMBER SCALE
 # ==========================================================
 
 def detect_multiplier(text):
