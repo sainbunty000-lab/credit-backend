@@ -1,55 +1,29 @@
 from fastapi import APIRouter, UploadFile, File
 
-from parsing.financial_parser import parse_financial_file
-from services.accounting_dictionary import extract_financial_values
-from services.wc_service import calculate_wc_eligibility
+from services.parser import parse_financial_file
+from services.wc_service import calculate_wc_logic
 
 router = APIRouter(prefix="/wc")
 
 
 @router.post("/upload-dual")
-async def process_wc_documents(
+async def upload_dual(
     balance_sheet: UploadFile = File(...),
     profit_loss: UploadFile = File(...)
 ):
 
-    # -----------------------------------------
-    # Parse Balance Sheet
-    # -----------------------------------------
-    bs_values = parse_financial_file(
-        balance_sheet.file,
+    bs_data = parse_financial_file(
+        await balance_sheet.read(),
         balance_sheet.filename
     )
 
-    # -----------------------------------------
-    # Parse Profit & Loss
-    # -----------------------------------------
-    pl_values = parse_financial_file(
-        profit_loss.file,
+    pl_data = parse_financial_file(
+        await profit_loss.read(),
         profit_loss.filename
     )
 
-    # -----------------------------------------
-    # Merge extracted values
-    # -----------------------------------------
-    raw_data = {**bs_values, **pl_values}
+    merged = {**bs_data, **pl_data}
 
-    # -----------------------------------------
-    # Normalize using accounting dictionary
-    # -----------------------------------------
-    standardized = extract_financial_values(raw_data)
+    result = calculate_wc_logic(merged)
 
-    # -----------------------------------------
-    # Calculate WC eligibility
-    # -----------------------------------------
-    calculation = calculate_wc_eligibility(
-        current_assets=standardized.get("current_assets", 0),
-        current_liabilities=standardized.get("current_liabilities", 0),
-        annual_sales=standardized.get("annual_sales", 0)
-    )
-
-    return {
-        "success": True,
-        "extracted_values": standardized,
-        "calculations": calculation
-    }
+    return result
