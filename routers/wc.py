@@ -4,7 +4,11 @@ from typing import Dict, Any
 from services.parser import parse_financial_file
 from services.wc_service import calculate_wc_logic
 
-router = APIRouter(prefix="/wc", tags=["Working Capital"])
+
+router = APIRouter(
+    prefix="/wc",
+    tags=["Working Capital"]
+)
 
 
 # ==========================================================
@@ -26,8 +30,9 @@ async def upload_dual(
         bs_bytes = await balance_sheet.read()
         pl_bytes = await profit_loss.read()
 
+
         # --------------------------------------------------
-        # PARSE FILES
+        # PARSE FILES (CSV / Excel / PDF / OCR / Image)
         # --------------------------------------------------
 
         bs_data = parse_financial_file(
@@ -40,8 +45,9 @@ async def upload_dual(
             profit_loss.filename
         )
 
+
         # --------------------------------------------------
-        # MERGE FINANCIAL DATA
+        # MERGE FINANCIAL VALUES
         # --------------------------------------------------
 
         merged: Dict[str, Any] = {}
@@ -52,21 +58,25 @@ async def upload_dual(
         if pl_data:
             merged.update(pl_data)
 
+
         # --------------------------------------------------
         # RUN WORKING CAPITAL MODEL
         # --------------------------------------------------
 
         result = calculate_wc_logic(merged)
 
+
         # --------------------------------------------------
-        # RETURN FINAL RESPONSE
+        # FINAL RESPONSE (Frontend Compatible)
         # --------------------------------------------------
 
         response = {
+
             "success": True,
 
             "current_assets": result.get("current_assets", 0),
             "current_liabilities": result.get("current_liabilities", 0),
+
             "inventory": merged.get("inventory", 0),
             "receivables": merged.get("receivables", 0),
 
