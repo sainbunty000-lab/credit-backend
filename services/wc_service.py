@@ -6,44 +6,47 @@ def calculate_wc_logic(data):
 
     ca = default_zero(data.get("current_assets"))
     cl = default_zero(data.get("current_liabilities"))
+
     inventory = default_zero(data.get("inventory"))
     receivables = default_zero(data.get("receivables"))
     payables = default_zero(data.get("payables"))
+
     sales = default_zero(data.get("annual_sales"))
     cogs = default_zero(data.get("cogs"))
+
     bank_credit = default_zero(data.get("bank_credit"))
 
     other_ca = default_zero(data.get("other_current_assets"))
     other_cl = default_zero(data.get("other_current_liabilities"))
 
-    # =====================================================
-    # AUTO CORRECTION ENGINE
-    # =====================================================
+    cash_bank = default_zero(data.get("cash_bank"))
 
-    # Fix Current Assets if parser missed total
-    calculated_ca = inventory + receivables + other_ca + default_zero(data.get("cash_bank"))
+    # =====================================
+    # AUTO FIX PARSER MISSING VALUES
+    # =====================================
+
+    calculated_ca = inventory + receivables + other_ca + cash_bank
 
     if ca == 0 or ca < calculated_ca:
         ca = calculated_ca
 
-    # Fix Current Liabilities if components larger
     calculated_cl = payables + other_cl
 
     if cl == 0 or cl < calculated_cl:
         cl = calculated_cl
 
-    # Fix missing COGS
     if cogs == 0 and sales > 0:
-        cogs = sales * 0.70   # industry approximation
+        cogs = sales * 0.70
 
-    # =====================================================
+    # =====================================
     # CORE RATIOS
-    # =====================================================
+    # =====================================
 
     nwc = ca - cl
 
     current_ratio = safe_divide(ca, cl)
     quick_ratio = safe_divide((ca - inventory), cl)
+
     wc_turnover = safe_divide(sales, nwc)
 
     inventory_days = safe_divide(inventory, cogs) * 365
@@ -53,9 +56,9 @@ def calculate_wc_logic(data):
     operating_cycle = inventory_days + receivable_days
     gap_days = max(0, operating_cycle - payable_days)
 
-    # =====================================================
+    # =====================================
     # BORROWING BASE
-    # =====================================================
+    # =====================================
 
     eligible_stock = inventory * 0.5
     eligible_debtors = receivables * 0.75
@@ -63,9 +66,9 @@ def calculate_wc_logic(data):
     drawing_power = eligible_stock + eligible_debtors - bank_credit
     drawing_power = max(0, drawing_power)
 
-    # =====================================================
+    # =====================================
     # MPBF METHOD
-    # =====================================================
+    # =====================================
 
     stock = inventory
     debtors = receivables
@@ -75,14 +78,13 @@ def calculate_wc_logic(data):
 
     wcg = gca - total_cl
 
-    margin_percent = 0.25
-    margin = gca * margin_percent
+    margin = gca * 0.25
 
     mpbf = wcg - margin
 
-    # =====================================================
+    # =====================================
     # TURNOVER METHOD
-    # =====================================================
+    # =====================================
 
     turnover_limit = sales * 0.20 if sales > 0 else 0
 
@@ -91,9 +93,9 @@ def calculate_wc_logic(data):
     else:
         recommended_limit = max(mpbf, turnover_limit)
 
-    # =====================================================
+    # =====================================
     # CHART DATA
-    # =====================================================
+    # =====================================
 
     gap_chart = [
         {"name": "GCA", "value": gca},
@@ -108,9 +110,9 @@ def calculate_wc_logic(data):
         {"name": "Other CA", "value": other_ca}
     ]
 
-    # =====================================================
+    # =====================================
     # RISK SCORING
-    # =====================================================
+    # =====================================
 
     risk_score = 0
 
@@ -137,18 +139,22 @@ def calculate_wc_logic(data):
         "D"
     )
 
-    # =====================================================
+    # =====================================
     # SAFE CLEAN FUNCTION
-    # =====================================================
+    # =====================================
 
     def clean(value):
-        if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+
+        if isinstance(value, float) and (
+            math.isnan(value) or math.isinf(value)
+        ):
             return 0
+
         return round(value, 2)
 
-    # =====================================================
+    # =====================================
     # FINAL RESPONSE
-    # =====================================================
+    # =====================================
 
     return {
 
