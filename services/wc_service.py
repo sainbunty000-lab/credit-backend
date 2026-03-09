@@ -13,7 +13,6 @@ def calculate_wc_logic(data):
     cogs = default_zero(data.get("cogs"))
     bank_credit = default_zero(data.get("bank_credit"))
 
-    # Optional values
     other_ca = default_zero(data.get("other_current_assets"))
     other_cl = default_zero(data.get("other_current_liabilities"))
 
@@ -32,9 +31,14 @@ def calculate_wc_logic(data):
     payable_days = safe_divide(payables, cogs) * 365
 
     operating_cycle = inventory_days + receivable_days
-    gap_days = operating_cycle - payable_days
+    gap_days = max(0, operating_cycle - payable_days)
 
-    drawing_power = (receivables * 0.75) + (inventory * 0.5)
+    # Borrowing Base
+    eligible_stock = inventory * 0.5
+    eligible_debtors = receivables * 0.75
+
+    drawing_power = eligible_stock + eligible_debtors - bank_credit
+    drawing_power = max(0, drawing_power)
 
     # ============================
     # MPBF METHOD
@@ -57,19 +61,12 @@ def calculate_wc_logic(data):
     # TURNOVER METHOD
     # ============================
 
-    turnover_limit = sales * 0.20
+    turnover_limit = sales * 0.20 if sales > 0 else 0
 
-    recommended_limit = min(mpbf, turnover_limit) if mpbf > 0 else turnover_limit
-
-    # ============================
-    # ASSET COMPOSITION
-    # ============================
-
-    asset_composition = {
-        "stock_percent": safe_divide(stock, gca) * 100,
-        "debtors_percent": safe_divide(debtors, gca) * 100,
-        "other_ca_percent": safe_divide(other_ca, gca) * 100
-    }
+    if turnover_limit > 0 and mpbf > 0:
+        recommended_limit = min(mpbf, turnover_limit)
+    else:
+        recommended_limit = max(mpbf, turnover_limit)
 
     # ============================
     # CHART DATA
@@ -118,7 +115,7 @@ def calculate_wc_logic(data):
     )
 
     # ============================
-    # SAFE CLEAN FUNCTION
+    # CLEAN FUNCTION
     # ============================
 
     def clean(value):
