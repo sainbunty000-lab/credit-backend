@@ -1,5 +1,6 @@
-from utils.safe_math import safe_divide, safe_subtract, default_zero
+from utils.safe_math import safe_divide, default_zero
 import math
+
 
 def calculate_wc_logic(data):
 
@@ -12,6 +13,14 @@ def calculate_wc_logic(data):
     cogs = default_zero(data.get("cogs"))
     bank_credit = default_zero(data.get("bank_credit"))
 
+    # Optional values
+    other_ca = default_zero(data.get("other_current_assets"))
+    other_cl = default_zero(data.get("other_current_liabilities"))
+
+    # ============================
+    # CORE RATIOS
+    # ============================
+
     nwc = ca - cl
 
     current_ratio = safe_divide(ca, cl)
@@ -25,76 +34,37 @@ def calculate_wc_logic(data):
     operating_cycle = inventory_days + receivable_days
     gap_days = operating_cycle - payable_days
 
-    drawing_power = (receivables * 0.75) + (inventory * 0.5) - bank_credit
-
-    liquidity_score = 90 if current_ratio >= 2 else 70 if current_ratio >= 1.5 else 50
-
-    # Prevent JSON errors (remove NaN / inf)
-    def clean(value):
-        if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
-            return 0
-        return round(value, 2)
-
-    return {
-        "nwc": clean(nwc),
-        "current_ratio": clean(current_ratio),
-        "quick_ratio": clean(quick_ratio),
-        "wc_turnover": clean(wc_turnover),
-        "inventory_days": clean(inventory_days),
-        "receivable_days": clean(receivable_days),
-        "payable_days": clean(payable_days),
-        "operating_cycle": clean(operating_cycle),
-        "gap_days": clean(gap_days),
-        "drawing_power": clean(drawing_power),
-        "liquidity_score": liquidity_score,
-        "status": "Eligible" if nwc > 0 else "Not Eligible"
-    }
+    drawing_power = (receivables * 0.75) + (inventory * 0.5)
 
     # ============================
-    # EXISTING RATIO ENGINE
+    # MPBF METHOD
     # ============================
-    nwc = ca - cl
-    current_ratio = safe_divide(ca, cl)
-    quick_ratio = safe_divide((ca - inventory), cl)
-    wc_turnover = safe_divide(sales, nwc)
 
-    inventory_days = safe_divide(inventory, cogs) * 365
-    receivable_days = safe_divide(receivables, sales) * 365
-    payable_days = safe_divide(payables, cogs) * 365
-
-    operating_cycle = inventory_days + receivable_days
-    gap_days = operating_cycle - payable_days
-
-    drawing_power = (receivables * 0.75) + (inventory * 0.5) - bank_credit
-
-    # ============================
-    # MPBF METHOD (BANK STANDARD)
-    # ============================
     stock = inventory
     debtors = receivables
+
     gca = stock + debtors + other_ca
     total_cl = payables + other_cl
 
     wcg = gca - total_cl
 
-    margin_percent = 0.25  # 25% borrower contribution
+    margin_percent = 0.25
     margin = gca * margin_percent
 
     mpbf = wcg - margin
 
     # ============================
-    # TURNOVER METHOD (ALT METHOD)
+    # TURNOVER METHOD
     # ============================
-    turnover_limit = sales * 0.20  # 20% of turnover
+
+    turnover_limit = sales * 0.20
+
+    recommended_limit = min(mpbf, turnover_limit) if mpbf > 0 else turnover_limit
 
     # ============================
-    # FINAL RECOMMENDATION
+    # ASSET COMPOSITION
     # ============================
-    recommended_limit = min(mpbf, turnover_limit)
 
-    # ============================
-    # ASSET COMPOSITION %
-    # ============================
     asset_composition = {
         "stock_percent": safe_divide(stock, gca) * 100,
         "debtors_percent": safe_divide(debtors, gca) * 100,
@@ -102,8 +72,9 @@ def calculate_wc_logic(data):
     }
 
     # ============================
-    # CHART READY DATA
+    # CHART DATA
     # ============================
+
     gap_chart = [
         {"name": "GCA", "value": gca},
         {"name": "CL", "value": total_cl},
@@ -118,8 +89,9 @@ def calculate_wc_logic(data):
     ]
 
     # ============================
-    # RISK GRADING
+    # RISK SCORING
     # ============================
+
     risk_score = 0
 
     if current_ratio >= 2:
@@ -146,34 +118,49 @@ def calculate_wc_logic(data):
     )
 
     # ============================
-    # STRUCTURED RETURN
+    # SAFE CLEAN FUNCTION
     # ============================
+
+    def clean(value):
+        if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+            return 0
+        return round(value, 2)
+
+    # ============================
+    # FINAL RETURN
+    # ============================
+
     return {
-        "input": data,
+
         "ratios": {
-            "nwc": round(nwc, 2),
-            "current_ratio": round(current_ratio, 2),
-            "quick_ratio": round(quick_ratio, 2),
-            "wc_turnover": round(wc_turnover, 2),
-            "operating_cycle": round(operating_cycle, 2),
-            "gap_days": round(gap_days, 2),
-            "drawing_power": round(drawing_power, 2)
+            "nwc": clean(nwc),
+            "current_ratio": clean(current_ratio),
+            "quick_ratio": clean(quick_ratio),
+            "wc_turnover": clean(wc_turnover),
+            "operating_cycle": clean(operating_cycle),
+            "gap_days": clean(gap_days),
+            "drawing_power": clean(drawing_power)
         },
+
         "mpbf_analysis": {
-            "gca": round(gca, 2),
-            "cl": round(total_cl, 2),
-            "wcg": round(wcg, 2),
-            "margin": round(margin, 2),
-            "mpbf": round(mpbf, 2),
-            "turnover_limit": round(turnover_limit, 2),
-            "recommended_limit": round(recommended_limit, 2)
+            "gca": clean(gca),
+            "cl": clean(total_cl),
+            "wcg": clean(wcg),
+            "margin": clean(margin),
+            "mpbf": clean(mpbf),
+            "turnover_limit": clean(turnover_limit),
+            "recommended_limit": clean(recommended_limit)
         },
+
         "charts": {
             "gap_chart": gap_chart,
             "composition_chart": composition_chart
         },
+
         "risk": {
             "risk_score": risk_score,
             "risk_grade": risk_grade
-        }
+        },
+
+        "status": "Eligible" if nwc > 0 else "Not Eligible"
     }
