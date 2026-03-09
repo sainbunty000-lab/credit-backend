@@ -16,7 +16,6 @@ from services.accounting_dictionary import ACCOUNTING_KEYWORDS
 
 def parse_financial_file(file, filename):
 
-    # SAFE FILE READ
     if isinstance(file, bytes):
         file_bytes = file
     else:
@@ -26,23 +25,17 @@ def parse_financial_file(file, filename):
 
     # CSV
     if filename.endswith(".csv"):
-
         df = pd.read_csv(BytesIO(file_bytes))
-
         return extract_from_dataframe(df)
 
     # XLSX
     elif filename.endswith(".xlsx"):
-
         df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
-
         return extract_from_dataframe(df)
 
     # XLS
     elif filename.endswith(".xls"):
-
         df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
-
         return extract_from_dataframe(df)
 
     # PDF
@@ -56,14 +49,13 @@ def parse_financial_file(file, filename):
         return extract_from_text(text)
 
     # IMAGE
-    elif filename.endswith(".jpg") or filename.endswith(".jpeg") or filename.endswith(".png"):
+    elif filename.endswith((".jpg",".jpeg",".png")):
 
         text = extract_image_ocr(file_bytes)
 
         return extract_from_text(text)
 
     else:
-
         raise ValueError("Unsupported file type")
 
 
@@ -132,7 +124,6 @@ def extract_image_ocr(file_bytes):
         return text
 
     except:
-
         return ""
 
 
@@ -142,23 +133,21 @@ def extract_image_ocr(file_bytes):
 
 def detect_multiplier(text):
 
-    multiplier = 1
+    text = text.lower()
 
-    text_lower = text.lower()
+    if "in thousand" in text or "in thousands" in text:
+        return 1000
 
-    if "in thousand" in text_lower:
-        multiplier = 1000
+    if "in lakh" in text or "in lakhs" in text:
+        return 100000
 
-    elif "in lakhs" in text_lower:
-        multiplier = 100000
+    if "in million" in text:
+        return 1000000
 
-    elif "in lakh" in text_lower:
-        multiplier = 100000
+    if "in crore" in text or "in crores" in text:
+        return 10000000
 
-    elif "in million" in text_lower:
-        multiplier = 1000000
-
-    return multiplier
+    return 1
 
 
 # ==========================================================
@@ -177,13 +166,16 @@ def extract_from_dataframe(df):
 
         row_text = " ".join(str(v).lower() for v in row.values)
 
-        normalized_row = row_text.replace(" ", "").replace(",", "")
+        normalized_row = row_text.replace(" ","").replace(",","")
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
 
+            if key in result:
+                continue
+
             for keyword in keywords:
 
-                keyword_norm = keyword.lower().replace(" ", "")
+                keyword_norm = keyword.lower().replace(" ","")
 
                 if keyword_norm in normalized_row:
 
@@ -213,15 +205,18 @@ def extract_from_text(text):
 
     for line in lines:
 
-        clean_line = line.lower().replace(",", "")
+        clean_line = line.lower().replace(",","")
 
-        normalized_line = clean_line.replace(" ", "")
+        normalized_line = clean_line.replace(" ","")
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
 
+            if key in result:
+                continue
+
             for keyword in keywords:
 
-                keyword_norm = keyword.lower().replace(" ", "")
+                keyword_norm = keyword.lower().replace(" ","")
 
                 if keyword_norm in normalized_line:
 
@@ -249,13 +244,13 @@ def extract_numbers(values):
 
         text = str(v)
 
-        text = text.replace(",", "")
+        text = text.replace(",", "").replace("₹","")
 
-        matches = re.findall(r"\(?-?\d+\.?\d*\)?", text)
+        matches = re.findall(r"\(?-?\d+(?:\.\d+)?\)?", text)
 
         for m in matches:
 
-            m = m.replace("(", "-").replace(")", "")
+            m = m.replace("(","-").replace(")","")
 
             try:
                 numbers.append(float(m))
