@@ -4,7 +4,9 @@ import pytesseract
 import re
 
 from pdf2image import convert_from_bytes
+from PIL import Image
 from io import BytesIO
+
 from services.accounting_dictionary import ACCOUNTING_KEYWORDS
 
 
@@ -29,7 +31,6 @@ def parse_financial_file(file, filename):
         df = pd.read_csv(BytesIO(file_bytes))
         return extract_from_dataframe(df)
 
-
     # ======================================
     # XLSX
     # ======================================
@@ -37,7 +38,6 @@ def parse_financial_file(file, filename):
 
         df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
         return extract_from_dataframe(df)
-
 
     # ======================================
     # XLS
@@ -47,7 +47,6 @@ def parse_financial_file(file, filename):
         df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
         return extract_from_dataframe(df)
 
-
     # ======================================
     # PDF
     # ======================================
@@ -55,13 +54,20 @@ def parse_financial_file(file, filename):
 
         text = extract_pdf_text(file_bytes)
 
-        # If no text → scanned document
+        # If no text → scanned PDF
         if not text.strip():
-
             text = extract_pdf_ocr(file_bytes)
 
         return extract_from_text(text)
 
+    # ======================================
+    # IMAGE (JPG / PNG)
+    # ======================================
+    elif filename.endswith(".jpg") or filename.endswith(".jpeg") or filename.endswith(".png"):
+
+        text = extract_image_ocr(file_bytes)
+
+        return extract_from_text(text)
 
     else:
         raise ValueError("Unsupported file type")
@@ -93,7 +99,7 @@ def extract_pdf_text(file_bytes):
 
 
 # ==========================================================
-# OCR EXTRACTION (FOR SCANNED PDF)
+# OCR EXTRACTION (SCANNED PDF)
 # ==========================================================
 
 def extract_pdf_ocr(file_bytes):
@@ -107,6 +113,26 @@ def extract_pdf_ocr(file_bytes):
         ocr_text = pytesseract.image_to_string(img)
 
         text += ocr_text + "\n"
+
+    return text
+
+
+# ==========================================================
+# OCR EXTRACTION (IMAGE)
+# ==========================================================
+
+def extract_image_ocr(file_bytes):
+
+    text = ""
+
+    try:
+
+        image = Image.open(BytesIO(file_bytes))
+
+        text = pytesseract.image_to_string(image)
+
+    except:
+        pass
 
     return text
 
@@ -183,7 +209,6 @@ def extract_numbers(values):
 
         text = str(v)
 
-        # remove commas
         text = text.replace(",", "")
 
         matches = re.findall(r"-?\d+\.?\d*", text)
