@@ -1,26 +1,55 @@
 from fastapi import APIRouter, UploadFile, File
-from parsing.financial_parser import extract_financial_values
+
+from parsing.financial_parser import parse_financial_file
+from services.accounting_dictionary import extract_financial_values
 from services.wc_service import calculate_wc_eligibility
 
 router = APIRouter(prefix="/wc")
 
-@router.post("/parse-and-calculate")
-async def process_wc_document(file: UploadFile = File(...)):
-    # 1. Mocking OCR engine call (ocr_engine.py)
-    # raw_data = ocr_engine.extract_tables(file)
-    raw_data = {"Turnover": 1000000, "Current Assets": 400000, "Trade Payables": 150000}
 
-    # 2. Normalize via Dictionary
+@router.post("/upload-dual")
+async def process_wc_documents(
+    balance_sheet: UploadFile = File(...),
+    profit_loss: UploadFile = File(...)
+):
+
+    # -----------------------------------------
+    # Parse Balance Sheet
+    # -----------------------------------------
+    bs_values = parse_financial_file(
+        balance_sheet.file,
+        balance_sheet.filename
+    )
+
+    # -----------------------------------------
+    # Parse Profit & Loss
+    # -----------------------------------------
+    pl_values = parse_financial_file(
+        profit_loss.file,
+        profit_loss.filename
+    )
+
+    # -----------------------------------------
+    # Merge extracted values
+    # -----------------------------------------
+    raw_data = {**bs_values, **pl_values}
+
+    # -----------------------------------------
+    # Normalize using accounting dictionary
+    # -----------------------------------------
     standardized = extract_financial_values(raw_data)
 
-    # 3. Calculate using locked formulas
+    # -----------------------------------------
+    # Calculate WC eligibility
+    # -----------------------------------------
     calculation = calculate_wc_eligibility(
-        current_assets=standardized["current_assets"],
-        current_liabilities=standardized["current_liabilities"],
-        annual_sales=standardized["annual_sales"]
+        current_assets=standardized.get("current_assets", 0),
+        current_liabilities=standardized.get("current_liabilities", 0),
+        annual_sales=standardized.get("annual_sales", 0)
     )
 
     return {
+        "success": True,
         "extracted_values": standardized,
-        "calculation": calculation
+        "calculations": calculation
     }
