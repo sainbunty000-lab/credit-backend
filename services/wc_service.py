@@ -16,9 +16,29 @@ def calculate_wc_logic(data):
     other_ca = default_zero(data.get("other_current_assets"))
     other_cl = default_zero(data.get("other_current_liabilities"))
 
-    # ============================
+    # =====================================================
+    # AUTO CORRECTION ENGINE
+    # =====================================================
+
+    # Fix Current Assets if parser missed total
+    calculated_ca = inventory + receivables + other_ca + default_zero(data.get("cash_bank"))
+
+    if ca == 0 or ca < calculated_ca:
+        ca = calculated_ca
+
+    # Fix Current Liabilities if components larger
+    calculated_cl = payables + other_cl
+
+    if cl == 0 or cl < calculated_cl:
+        cl = calculated_cl
+
+    # Fix missing COGS
+    if cogs == 0 and sales > 0:
+        cogs = sales * 0.70   # industry approximation
+
+    # =====================================================
     # CORE RATIOS
-    # ============================
+    # =====================================================
 
     nwc = ca - cl
 
@@ -33,16 +53,19 @@ def calculate_wc_logic(data):
     operating_cycle = inventory_days + receivable_days
     gap_days = max(0, operating_cycle - payable_days)
 
-    # Borrowing Base
+    # =====================================================
+    # BORROWING BASE
+    # =====================================================
+
     eligible_stock = inventory * 0.5
     eligible_debtors = receivables * 0.75
 
     drawing_power = eligible_stock + eligible_debtors - bank_credit
     drawing_power = max(0, drawing_power)
 
-    # ============================
+    # =====================================================
     # MPBF METHOD
-    # ============================
+    # =====================================================
 
     stock = inventory
     debtors = receivables
@@ -57,9 +80,9 @@ def calculate_wc_logic(data):
 
     mpbf = wcg - margin
 
-    # ============================
+    # =====================================================
     # TURNOVER METHOD
-    # ============================
+    # =====================================================
 
     turnover_limit = sales * 0.20 if sales > 0 else 0
 
@@ -68,9 +91,9 @@ def calculate_wc_logic(data):
     else:
         recommended_limit = max(mpbf, turnover_limit)
 
-    # ============================
+    # =====================================================
     # CHART DATA
-    # ============================
+    # =====================================================
 
     gap_chart = [
         {"name": "GCA", "value": gca},
@@ -85,9 +108,9 @@ def calculate_wc_logic(data):
         {"name": "Other CA", "value": other_ca}
     ]
 
-    # ============================
+    # =====================================================
     # RISK SCORING
-    # ============================
+    # =====================================================
 
     risk_score = 0
 
@@ -114,18 +137,18 @@ def calculate_wc_logic(data):
         "D"
     )
 
-    # ============================
-    # CLEAN FUNCTION
-    # ============================
+    # =====================================================
+    # SAFE CLEAN FUNCTION
+    # =====================================================
 
     def clean(value):
         if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
             return 0
         return round(value, 2)
 
-    # ============================
-    # FINAL RETURN
-    # ============================
+    # =====================================================
+    # FINAL RESPONSE
+    # =====================================================
 
     return {
 
