@@ -1,136 +1,129 @@
 ACCOUNTING_KEYWORDS = {
 
-    # =========================
-    # CURRENT ASSETS
-    # =========================
-    "current_assets": [
-        "current assets",
-        "total current assets",
-        "ca",
-        "current asset",
-        "cash and bank",
-        "cash & bank balances",
-        "bank and cash balance",
-        "other current assets",
-        "loans & advances",
-        "loans and advances",
-        "short term loans"
-    ],
+# ==========================================================
+# BALANCE SHEET
+# ==========================================================
 
-    # =========================
-    # CURRENT LIABILITIES
-    # =========================
-    "current_liabilities": [
-        "current liabilities",
-        "total current liabilities",
-        "cl",
-        "short term liabilities",
-        "sundry creditors",
-        "trade payables",
-        "salary payable",
-        "fuel payable",
-        "other provision b/s"
-    ],
+"current_assets":[
 
-    # =========================
-    # INVENTORY
-    # =========================
-    "inventory": [
-        "inventory",
-        "stock in trade",
-        "closing stock",
-        "stock",
-        "inventories",
-        "raw material",
-        "work in progress",
-        "finished goods",
-        "stores and spares"
-    ],
+"current assets",
+"total current assets",
+"tca",
+"current asset",
+"current assets total"
 
-    # =========================
-    # RECEIVABLES
-    # =========================
-    "receivables": [
-        "trade receivables",
-        "sundry debtors",
-        "debtors",
-        "accounts receivable",
-        "receivables",
-        "book debts"
-    ],
+],
 
-    # =========================
-    # PAYABLES
-    # =========================
-    "payables": [
-        "trade payables",
-        "sundry creditors",
-        "creditors",
-        "accounts payable",
-        "payables",
-        "bills payable"
-    ],
+"current_liabilities":[
 
-    # =========================
-    # SALES / TURNOVER
-    # =========================
-    "annual_sales": [
-        "revenue from operations",
-        "revenue",
-        "sales",
-        "turnover",
-        "net sales",
-        "total income",
-        "gross turnover",
-        "gross receipts"   # 🔥 Added for your P&L
-    ],
+"current liabilities",
+"total current liabilities",
+"tcl",
+"current liability",
+"current liabilities total"
 
-    # =========================
-    # COGS / COST
-    # =========================
-    "cogs": [
-        "cost of goods sold",
-        "cogs",
-        "cost of sales",
-        "consumption of raw materials",
-        "cost of materials consumed",
-        "purchase of stock-in-trade",
-        "cost of revenue",
-        "depreciation"     # 🔥 Used in your P&L
-    ],
+],
 
-    # =========================
-    # BANK CREDIT
-    # =========================
-    "bank_credit": [
-        "short term borrowings",
-        "working capital loan",
-        "cc limit",
-        "od limit",
-        "cash credit",
-        "overdraft",
-        "bank overdraft",
-        "secured loans (from banks)"
-    ],
+"inventory":[
 
-    # =========================
-    # EMI / INCOME
-    # =========================
-    "emi_monthly": [
-        "emi",
-        "loan installment",
-        "repayment of long term borrowings",
-        "finance cost",
-        "interest expense"
-    ],
+"inventory",
+"stock in trade",
+"closing stock",
+"stock",
+"inventory total",
+"inventories"
 
-    "documented_income": [
-        "net profit before tax",
-        "pbt",
-        "net profit after tax",
-        "pat",
-        "gross profit",
-        "total comprehensive income",
-        "net profit"
-    ]
+],
+
+"receivables":[
+
+"receivables",
+"trade receivables",
+"sundry debtors",
+"accounts receivable",
+"debtors",
+"book debts"
+
+],
+
+"payables":[
+
+"payables",
+"trade payables",
+"sundry creditors",
+"accounts payable",
+"creditors"
+
+],
+
+
+# ==========================================================
+# PROFIT & LOSS
+# ==========================================================
+
+"annual_sales":[
+
+"sales",
+"revenue",
+"turnover",
+"gross revenue",
+"total sales",
+"net sales",
+"sales turnover",
+"operating revenue"
+
+],
+
+"cogs":[
+
+"cost of goods sold",
+"cogs",
+"cost of sales",
+"cost of goods",
+"direct costs"
+
+],
+
+"gross_profit":[
+
+"gross profit",
+"gp"
+
+],
+
+"net_profit":[
+
+"net profit",
+"net income",
+"profit after tax",
+"profit",
+"pat"
+
+],
+
+
+# ==========================================================
+# BANK / WORKING CAPITAL SUPPORT
+# ==========================================================
+
+"bank_credit":[
+
+"bank borrowings",
+"working capital loan",
+"cash credit",
+"cc limit",
+"bank loan",
+"borrowings"
+
+],
+
+"emi":[
+
+"emi",
+"loan installment",
+"monthly installment",
+"installment payment"
+
+]
+
 }
