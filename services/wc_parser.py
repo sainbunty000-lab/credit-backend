@@ -23,46 +23,32 @@ def parse_financial_file(file, filename):
 
     filename = filename.lower()
 
-    # ======================================
     # CSV
-    # ======================================
     if filename.endswith(".csv"):
-
         df = pd.read_csv(BytesIO(file_bytes))
         return extract_from_dataframe(df)
 
-    # ======================================
     # XLSX
-    # ======================================
     elif filename.endswith(".xlsx"):
-
         df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
         return extract_from_dataframe(df)
 
-    # ======================================
     # XLS
-    # ======================================
     elif filename.endswith(".xls"):
-
         df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
         return extract_from_dataframe(df)
 
-    # ======================================
     # PDF
-    # ======================================
     elif filename.endswith(".pdf"):
 
         text = extract_pdf_text(file_bytes)
 
-        # If no text → scanned PDF
         if not text.strip():
             text = extract_pdf_ocr(file_bytes)
 
         return extract_from_text(text)
 
-    # ======================================
-    # IMAGE (JPG / PNG)
-    # ======================================
+    # IMAGE
     elif filename.endswith(".jpg") or filename.endswith(".jpeg") or filename.endswith(".png"):
 
         text = extract_image_ocr(file_bytes)
@@ -82,7 +68,6 @@ def extract_pdf_text(file_bytes):
     text = ""
 
     try:
-
         with pdfplumber.open(BytesIO(file_bytes)) as pdf:
 
             for page in pdf.pages:
@@ -110,7 +95,10 @@ def extract_pdf_ocr(file_bytes):
 
     for img in images:
 
-        ocr_text = pytesseract.image_to_string(img)
+        ocr_text = pytesseract.image_to_string(
+            img,
+            config="--psm 6"
+        )
 
         text += ocr_text + "\n"
 
@@ -118,23 +106,49 @@ def extract_pdf_ocr(file_bytes):
 
 
 # ==========================================================
-# OCR EXTRACTION (IMAGE)
+# OCR IMAGE
 # ==========================================================
 
 def extract_image_ocr(file_bytes):
-
-    text = ""
 
     try:
 
         image = Image.open(BytesIO(file_bytes))
 
-        text = pytesseract.image_to_string(image)
+        text = pytesseract.image_to_string(
+            image,
+            config="--psm 6"
+        )
+
+        return text
 
     except:
-        pass
+        return ""
 
-    return text
+
+# ==========================================================
+# DETECT UNIT SCALE
+# ==========================================================
+
+def detect_multiplier(text):
+
+    multiplier = 1
+
+    text_lower = text.lower()
+
+    if "in thousand" in text_lower:
+        multiplier = 1000
+
+    elif "in lakhs" in text_lower:
+        multiplier = 100000
+
+    elif "in lakh" in text_lower:
+        multiplier = 100000
+
+    elif "in million" in text_lower:
+        multiplier = 1000000
+
+    return multiplier
 
 
 # ==========================================================
@@ -145,10 +159,15 @@ def extract_from_dataframe(df):
 
     result = {}
 
+    text_blob = " ".join(df.astype(str).values.flatten())
+
+    multiplier = detect_multiplier(text_blob)
+
     for _, row in df.iterrows():
 
         row_text = " ".join(str(v).lower() for v in row.values)
-        normalized_row = row_text.replace(" ", "")
+
+        normalized_row = row_text.replace(" ", "").replace(",", "")
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
 
@@ -161,7 +180,11 @@ def extract_from_dataframe(df):
                     numbers = extract_numbers(row.values)
 
                     if numbers:
-                        result[key] = numbers[-1]
+
+                        value = numbers[-1] * multiplier
+
+                        if value > 100:
+                            result[key] = value
 
     return result
 
@@ -174,11 +197,14 @@ def extract_from_text(text):
 
     result = {}
 
+    multiplier = detect_multiplier(text)
+
     lines = text.split("\n")
 
     for line in lines:
 
         clean_line = line.lower().replace(",", "")
+
         normalized_line = clean_line.replace(" ", "")
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
@@ -192,7 +218,11 @@ def extract_from_text(text):
                     numbers = extract_numbers([line])
 
                     if numbers:
-                        result[key] = numbers[-1]
+
+                        value = numbers[-1] * multiplier
+
+                        if value > 100:
+                            result[key] = value
 
     return result
 
@@ -211,9 +241,11 @@ def extract_numbers(values):
 
         text = text.replace(",", "")
 
-        matches = re.findall(r"-?\d+\.?\d*", text)
+        matches = re.findall(r"\(?-?\d+\.?\d*\)?", text)
 
         for m in matches:
+
+            m = m.replace("(", "-").replace(")", "")
 
             try:
                 numbers.append(float(m))
