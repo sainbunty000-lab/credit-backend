@@ -5,14 +5,14 @@ from models.cam import CAMReport
 from datetime import datetime
 from services.pdf_generator import generate_cam_pdf
 from fastapi.responses import FileResponse
-import os
 
-router = APIRouter(prefix="/cam", tags=["CAM Management"])
+router = APIRouter(prefix="/cam", tags=["CAM Dashboard"])
 
 
-# ---------------- SAVE ----------------
-@router.post("/save")
-def create_report(data: dict, db: Session = Depends(get_db)):
+# ---------------- CREATE CAM ----------------
+@router.post("/create")
+def create_cam(data: dict, db: Session = Depends(get_db)):
+
     if not data.get("customer_name"):
         raise HTTPException(status_code=400, detail="Customer Name Required")
 
@@ -29,12 +29,13 @@ def create_report(data: dict, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(report)
 
-    return {"id": report.id}
+    return {"report_id": report.id}
 
 
-# ---------------- UPDATE ----------------
-@router.put("/update/{report_id}")
-def update_report(report_id: int, data: dict, db: Session = Depends(get_db)):
+# ---------------- AUTOSAVE CAM ----------------
+@router.put("/autosave/{report_id}")
+def autosave_cam(report_id: int, data: dict, db: Session = Depends(get_db)):
+
     report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
 
     if not report:
@@ -47,16 +48,52 @@ def update_report(report_id: int, data: dict, db: Session = Depends(get_db)):
 
     db.commit()
 
-    return {"message": "Updated Successfully"}
+    return {"message": "Autosaved"}
 
 
-# ---------------- GET ONE ----------------
-@router.get("/pdf/{report_id}")
-def download_pdf(report_id: int, db: Session = Depends(get_db)):
+# ---------------- SUBMIT CAM ----------------
+@router.post("/submit/{report_id}")
+def submit_cam(report_id: int, db: Session = Depends(get_db)):
+
     report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
 
     if not report:
-        raise HTTPException(status_code=404, detail="Not found")
+        raise HTTPException(status_code=404, detail="Report Not Found")
+
+    report.status = "Submitted"
+    db.commit()
+
+    return {"message": "CAM Submitted"}
+
+
+# ---------------- GET CAM ----------------
+@router.get("/{report_id}")
+def get_cam(report_id: int, db: Session = Depends(get_db)):
+
+    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    return {
+        "id": report.id,
+        "customer_name": report.customer_name,
+        "wc_data": report.wc_data,
+        "agri_data": report.agri_data,
+        "banking_data": report.banking_data,
+        "status": report.status,
+        "created_at": report.created_at
+    }
+
+
+# ---------------- DOWNLOAD PDF ----------------
+@router.get("/pdf/{report_id}")
+def download_pdf(report_id: int, db: Session = Depends(get_db)):
+
+    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Not Found")
 
     filename = generate_cam_pdf(report.__dict__, f"CAM_{report_id}.pdf")
 
@@ -66,8 +103,34 @@ def download_pdf(report_id: int, db: Session = Depends(get_db)):
         filename=filename,
     )
 
+
 # ---------------- GET ALL ----------------
 @router.get("/all")
 def get_all_reports(db: Session = Depends(get_db)):
+
     reports = db.query(CAMReport).order_by(CAMReport.id.desc()).all()
-    return reports
+
+    return [
+        {
+            "id": r.id,
+            "customer_name": r.customer_name,
+            "status": r.status,
+            "created_at": r.created_at
+        }
+        for r in reports
+    ]
+
+
+# ---------------- DELETE CAM ----------------
+@router.delete("/{report_id}")
+def delete_cam(report_id: int, db: Session = Depends(get_db)):
+
+    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    db.delete(report)
+    db.commit()
+
+    return {"message": "Report Deleted"}
