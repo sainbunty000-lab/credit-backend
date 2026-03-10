@@ -1,27 +1,12 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, Any
 
-# ==========================================
-# IMPORT SERVICES
-# ==========================================
+from routers.cam_router import router as cam_router
+from routers.wc_router import wc_router
+from routers.agriculture_router import agri_router
+from routers.banking_router import bank_router
 
-from services.wc_parser import parse_financial_file
-from services.wc_service import calculate_wc_logic
-from services.agriculture_service import calculate_agri_logic
-from services.banking_parser import parse_banking_file
-
-
-# ==========================================
-# FASTAPI APP
-# ==========================================
-
-app = FastAPI(title="Credit Analysis API")
-
-
-# ==========================================
-# CORS
-# ==========================================
+app = FastAPI(title="Credit Intelligence Engine")
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,56 +16,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register routers
 
-# ==========================================
-# HEALTH CHECK
-# ==========================================
+app.include_router(cam_router)
+app.include_router(wc_router, prefix="/wc")
+app.include_router(agri_router, prefix="/agriculture")
+app.include_router(bank_router, prefix="/banking")
+
 
 @app.get("/")
 def root():
     return {"status": "API Running"}
-
-
-# ==========================================
-# WORKING CAPITAL ANALYSIS
-# ==========================================
-
-@app.post("/wc-analysis")
-async def wc_analysis(file: UploadFile = File(...)) -> Dict[str, Any]:
-
-    file_bytes = await file.read()
-
-    parsed_data = parse_financial_file(file_bytes, file.filename)
-
-    wc_result = calculate_wc_logic(parsed_data)
-
-    return {
-        "parser": parsed_data,
-        "wc_analysis": wc_result
-    }
-
-
-# ==========================================
-# AGRICULTURE ELIGIBILITY
-# ==========================================
-
-@app.post("/agriculture-analysis")
-async def agriculture_analysis(data: Dict[str, Any]):
-
-    result = calculate_agri_logic(data)
-
-    return result
-
-
-# ==========================================
-# BANK STATEMENT ANALYSIS
-# ==========================================
-
-@app.post("/bank-analysis")
-async def bank_analysis(file: UploadFile = File(...)):
-
-    file_bytes = await file.read()
-
-    result = parse_banking_file(file_bytes, file.filename)
-
-    return result
