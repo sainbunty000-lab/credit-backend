@@ -44,7 +44,7 @@ def parse_financial_file(file, filename):
 
         extracted = extract_from_text(text)
 
-    elif filename.endswith((".jpg",".jpeg",".png")):
+    elif filename.endswith((".jpg", ".jpeg", ".png")):
 
         text = extract_image_ocr(file_bytes)
 
@@ -131,17 +131,17 @@ def detect_multiplier(text):
 
     text = text.lower()
 
-    if "in thousand" in text or "in thousands" in text:
+    if "in thousand" in text:
         return 1000
 
     if "in lakh" in text or "in lakhs" in text:
         return 100000
 
-    if "in million" in text:
-        return 1000000
-
     if "in crore" in text or "in crores" in text:
         return 10000000
+
+    if "in million" in text:
+        return 1000000
 
     return 1
 
@@ -162,7 +162,7 @@ def extract_from_dataframe(df):
 
         row_text = " ".join(str(v).lower() for v in row.values)
 
-        normalized_row = row_text.replace(" ","").replace(",","")
+        normalized_row = row_text.replace(" ", "").replace(",", "")
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
 
@@ -171,7 +171,7 @@ def extract_from_dataframe(df):
 
             for keyword in keywords:
 
-                keyword_norm = keyword.lower().replace(" ","")
+                keyword_norm = keyword.lower().replace(" ", "")
 
                 if keyword_norm in normalized_row:
 
@@ -201,9 +201,9 @@ def extract_from_text(text):
 
     for line in lines:
 
-        clean_line = line.lower().replace(",","")
+        clean_line = line.lower().replace(",", "")
 
-        normalized_line = clean_line.replace(" ","")
+        normalized_line = clean_line.replace(" ", "")
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
 
@@ -212,7 +212,7 @@ def extract_from_text(text):
 
             for keyword in keywords:
 
-                keyword_norm = keyword.lower().replace(" ","")
+                keyword_norm = keyword.lower().replace(" ", "")
 
                 if keyword_norm in normalized_line:
 
@@ -240,13 +240,13 @@ def extract_numbers(values):
 
         text = str(v)
 
-        text = text.replace(",", "").replace("₹","")
+        text = text.replace(",", "").replace("₹", "")
 
         matches = re.findall(r"\(?-?\d+(?:\.\d+)?\)?", text)
 
         for m in matches:
 
-            m = m.replace("(","-").replace(")","")
+            m = m.replace("(", "-").replace(")", "")
 
             try:
                 numbers.append(float(m))
@@ -257,29 +257,44 @@ def extract_numbers(values):
 
 
 # ==========================================================
+# SAFE DIVIDE
+# ==========================================================
+
+def safe_divide(a, b):
+
+    if b == 0:
+        return 0
+
+    return a / b
+
+
+# ==========================================================
 # CAM FINANCIAL CALCULATIONS
 # ==========================================================
 
 def calculate_financial_metrics(data):
 
-    sales = data.get("sales",0)
-    other_income = data.get("other_income",0)
-    expenses = data.get("total_expenses",0)
-    interest = data.get("interest",0)
-    depreciation = data.get("depreciation",0)
-    tax = data.get("tax",0)
+    sales = data.get("sales", 0)
+    other_income = data.get("other_income", 0)
+    expenses = data.get("total_expenses", 0)
+    interest = data.get("interest", 0)
+    depreciation = data.get("depreciation", 0)
+    tax = data.get("tax", 0)
 
-    equity = data.get("equity_share_capital",0)
-    reserves = data.get("reserves",0)
+    equity = data.get("equity_share_capital", 0)
+    reserves = data.get("reserves", 0)
 
-    short_debt = data.get("short_term_debt",0)
-    long_debt = data.get("long_term_debt",0)
-    unsecured = data.get("unsecured_loans",0)
+    short_debt = data.get("short_term_debt", 0)
+    long_debt = data.get("long_term_debt", 0)
+    unsecured = data.get("unsecured_loans", 0)
 
-    current_assets = data.get("current_assets",0)
-    current_liabilities = data.get("current_liabilities",0)
+    current_assets = data.get("current_assets", 0)
+    current_liabilities = data.get("current_liabilities", 0)
 
-    # PROFIT
+    # =====================================
+    # PROFIT CALCULATIONS
+    # =====================================
+
     total_income = sales + other_income
 
     pbdt = total_income - expenses
@@ -290,18 +305,27 @@ def calculate_financial_metrics(data):
 
     cash_profit = pat + depreciation
 
-    # NETWORTH
+    # =====================================
+    # NET WORTH
+    # =====================================
+
     networth = equity + reserves
 
+    # =====================================
     # TOTAL DEBT
+    # =====================================
+
     total_debt = short_debt + long_debt + unsecured
 
+    # =====================================
     # RATIOS
-    current_ratio = current_assets / current_liabilities if current_liabilities else 0
+    # =====================================
 
-    debt_equity = total_debt / networth if networth else 0
+    current_ratio = safe_divide(current_assets, current_liabilities)
 
-    net_margin = pat / sales if sales else 0
+    debt_equity = safe_divide(total_debt, networth)
+
+    net_margin = safe_divide(pat, sales)
 
     return {
         "total_income": total_income,
