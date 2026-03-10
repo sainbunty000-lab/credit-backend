@@ -1,32 +1,27 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import Dict, Any
 
-# ==========================
+# ==========================================
 # IMPORT SERVICES
-# ==========================
+# ==========================================
 
 from services.wc_parser import parse_financial_file
 from services.wc_service import calculate_wc_logic
-
 from services.agriculture_service import calculate_agri_logic
-
 from services.banking_parser import parse_banking_file
-from services.analyzer import analyze_transactions   # Enterprise analyzer
-
-# NEW: CAM Dashboard
-from services.cam_service import router as cam_router
 
 
-# ==========================
-# APP INIT
-# ==========================
+# ==========================================
+# FASTAPI APP
+# ==========================================
 
-app = FastAPI(
-    title="Credit Intelligence Engine",
-    version="2.2.2"
-)
+app = FastAPI(title="Credit Analysis API")
+
+
+# ==========================================
+# CORS
+# ==========================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,126 +32,55 @@ app.add_middleware(
 )
 
 
-# ==========================
-# REGISTER CAM ROUTER
-# ==========================
-
-app.include_router(cam_router)
-
-
-# ==========================
-# REQUEST MODELS
-# ==========================
-
-class BankingAnalyzeRequest(BaseModel):
-    transactions: List[Dict[str, Any]]
-
-
-# ==========================
-# WORKING CAPITAL
-# ==========================
-
-@app.post("/wc/upload-dual")
-async def wc_upload_dual(
-    balance_sheet: UploadFile = File(...),
-    profit_loss: UploadFile = File(...)
-):
-    try:
-        bs_bytes = await balance_sheet.read()
-        pl_bytes = await profit_loss.read()
-
-        bs_data = parse_financial_file(bs_bytes, balance_sheet.filename)
-        pl_data = parse_financial_file(pl_bytes, profit_loss.filename)
-
-        combined_data = {**bs_data, **pl_data}
-        calculations = calculate_wc_logic(combined_data)
-
-        return {
-            **combined_data,
-            **calculations,
-            "success": True
-        }
-
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/wc/manual-calc")
-async def wc_manual_calc(data: dict):
-    try:
-        result = calculate_wc_logic(data)
-        return {**data, **result, "success": True}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-# ==========================
-# AGRICULTURE
-# ==========================
-
-@app.post("/agriculture/calculate")
-async def agri_calc(data: dict):
-
-    return calculate_agri_logic(
-        data.get("documented_income", 0),
-        data.get("tax", 0),
-        data.get("undocumented_income_monthly", 0),
-        data.get("emi_monthly", 0),
-        data.get("tenure_years", 5),
-        data.get("interest_rate", 12)
-    )
-
-
-# ==========================
-# BANKING ANALYSIS
-# ==========================
-
-@app.post("/banking/full-analysis")
-async def banking_full_analysis(file: UploadFile = File(...)):
-
-    try:
-
-        file_bytes = await file.read()
-
-        # Step 1 → Parse PDF into transactions
-        transactions = parse_banking_file(file_bytes)
-
-        if not transactions:
-            return {
-                "success": False,
-                "error": "No transactions detected in statement."
-            }
-
-        # Step 2 → Enterprise Analyzer
-        result = analyze_transactions(transactions)
-
-        return {
-            "success": True,
-            "analysis": result
-        }
-
-    except Exception as e:
-
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-
-# ==========================
+# ==========================================
 # HEALTH CHECK
-# ==========================
+# ==========================================
 
 @app.get("/")
-def health():
+def root():
+    return {"status": "API Running"}
+
+
+# ==========================================
+# WORKING CAPITAL ANALYSIS
+# ==========================================
+
+@app.post("/wc-analysis")
+async def wc_analysis(file: UploadFile = File(...)) -> Dict[str, Any]:
+
+    file_bytes = await file.read()
+
+    parsed_data = parse_financial_file(file_bytes, file.filename)
+
+    wc_result = calculate_wc_logic(parsed_data)
 
     return {
-        "status": "Backend Active",
-        "version": "2.2.2",
-        "modules": {
-            "working_capital": "active",
-            "agriculture": "active",
-            "banking": "enterprise_enabled",
-            "cam_dashboard": "active"
-        }
+        "parser": parsed_data,
+        "wc_analysis": wc_result
     }
+
+
+# ==========================================
+# AGRICULTURE ELIGIBILITY
+# ==========================================
+
+@app.post("/agriculture-analysis")
+async def agriculture_analysis(data: Dict[str, Any]):
+
+    result = calculate_agri_logic(data)
+
+    return result
+
+
+# ==========================================
+# BANK STATEMENT ANALYSIS
+# ==========================================
+
+@app.post("/bank-analysis")
+async def bank_analysis(file: UploadFile = File(...)):
+
+    file_bytes = await file.read()
+
+    result = parse_banking_file(file_bytes, file.filename)
+
+    return result
