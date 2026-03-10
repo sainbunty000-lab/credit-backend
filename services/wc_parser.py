@@ -24,19 +24,13 @@ def parse_financial_file(file, filename):
 
     filename = filename.lower()
 
-    # ===============================
     # CSV
-    # ===============================
-
     if filename.endswith(".csv"):
 
         df = pd.read_csv(BytesIO(file_bytes))
         extracted = extract_from_dataframe(df)
 
-    # ===============================
     # EXCEL
-    # ===============================
-
     elif filename.endswith(".xlsx"):
 
         df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
@@ -47,10 +41,7 @@ def parse_financial_file(file, filename):
         df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
         extracted = extract_from_dataframe(df)
 
-    # ===============================
     # PDF
-    # ===============================
-
     elif filename.endswith(".pdf"):
 
         text = extract_pdf_text(file_bytes)
@@ -60,28 +51,19 @@ def parse_financial_file(file, filename):
 
         extracted = extract_from_text(text)
 
-    # ===============================
-    # WORD DOCUMENT
-    # ===============================
-
+    # WORD
     elif filename.endswith(".docx"):
 
         text = extract_docx_text(file_bytes)
-
         extracted = extract_from_text(text)
 
-    # ===============================
-    # IMAGE OCR
-    # ===============================
-
-    elif filename.endswith((".jpg", ".jpeg", ".png")):
+    # IMAGE
+    elif filename.endswith((".jpg",".jpeg",".png")):
 
         text = extract_image_ocr(file_bytes)
-
         extracted = extract_from_text(text)
 
     else:
-
         raise ValueError("Unsupported file type")
 
     calculations = calculate_financial_metrics(extracted)
@@ -90,6 +72,23 @@ def parse_financial_file(file, filename):
         "inputs": extracted,
         "calculations": calculations
     }
+
+
+# ==========================================================
+# STATEMENT TYPE DETECTION
+# ==========================================================
+
+def detect_statement_type(text):
+
+    text = text.lower()
+
+    if "balance sheet" in text:
+        return "balance_sheet"
+
+    if "profit and loss" in text or "statement of profit and loss" in text:
+        return "pnl"
+
+    return "unknown"
 
 
 # ==========================================================
@@ -155,7 +154,7 @@ def extract_image_ocr(file_bytes):
 
 
 # ==========================================================
-# WORD TEXT EXTRACTION
+# WORD EXTRACTION
 # ==========================================================
 
 def extract_docx_text(file_bytes):
@@ -176,7 +175,7 @@ def extract_docx_text(file_bytes):
 
 
 # ==========================================================
-# DETECT UNIT SCALE
+# UNIT DETECTION
 # ==========================================================
 
 def detect_multiplier(text):
@@ -195,11 +194,17 @@ def detect_multiplier(text):
     if "in crore" in text or "in crores" in text:
         return 10000000
 
+    if "₹ in lakhs" in text:
+        return 100000
+
+    if "₹ in crores" in text:
+        return 10000000
+
     return 1
 
 
 # ==========================================================
-# EXTRACT FROM DATAFRAME
+# DATAFRAME EXTRACTION
 # ==========================================================
 
 def extract_from_dataframe(df):
@@ -207,13 +212,11 @@ def extract_from_dataframe(df):
     result = {}
 
     text_blob = " ".join(df.astype(str).values.flatten())
-
     multiplier = detect_multiplier(text_blob)
 
     for _, row in df.iterrows():
 
         row_text = " ".join(str(v).lower() for v in row.values)
-
         normalized_row = row_text.replace(" ","").replace(",","")
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
@@ -231,7 +234,10 @@ def extract_from_dataframe(df):
 
                     if numbers:
 
-                        value = numbers[-1] * multiplier
+                        if len(numbers) >= 2:
+                            value = numbers[-2] * multiplier
+                        else:
+                            value = numbers[-1] * multiplier
 
                         if abs(value) > 100:
                             result[key] = value
@@ -240,13 +246,12 @@ def extract_from_dataframe(df):
 
 
 # ==========================================================
-# EXTRACT FROM TEXT
+# TEXT EXTRACTION
 # ==========================================================
 
 def extract_from_text(text):
 
     result = {}
-
     multiplier = detect_multiplier(text)
 
     lines = text.split("\n")
@@ -254,7 +259,6 @@ def extract_from_text(text):
     for line in lines:
 
         clean_line = line.lower().replace(",","")
-
         normalized_line = clean_line.replace(" ","")
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
@@ -272,7 +276,10 @@ def extract_from_text(text):
 
                     if numbers:
 
-                        value = numbers[-1] * multiplier
+                        if len(numbers) >= 2:
+                            value = numbers[-2] * multiplier
+                        else:
+                            value = numbers[-1] * multiplier
 
                         if abs(value) > 100:
                             result[key] = value
@@ -292,13 +299,13 @@ def extract_numbers(values):
 
         text = str(v)
 
-        text = text.replace(",", "").replace("₹","")
+        text = text.replace("₹","")
 
-        matches = re.findall(r"\(?-?\d+(?:\.\d+)?\)?", text)
+        matches = re.findall(r"-?\d+(?:,\d{3})*(?:\.\d+)?", text)
 
         for m in matches:
 
-            m = m.replace("(","-").replace(")","")
+            m = m.replace(",", "")
 
             try:
                 numbers.append(float(m))
@@ -331,28 +338,17 @@ def calculate_financial_metrics(data):
     current_assets = data.get("current_assets",0)
     current_liabilities = data.get("current_liabilities",0)
 
-    # PROFIT
     total_income = sales + other_income
-
     pbdt = total_income - expenses
-
     pbt = pbdt - interest - depreciation
-
     pat = pbt - tax
-
     cash_profit = pat + depreciation
 
-    # NETWORTH
     networth = equity + reserves
-
-    # TOTAL DEBT
     total_debt = short_debt + long_debt + unsecured
 
-    # RATIOS
     current_ratio = current_assets / current_liabilities if current_liabilities else 0
-
     debt_equity = total_debt / networth if networth else 0
-
     net_margin = pat / sales if sales else 0
 
     return {
