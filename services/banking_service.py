@@ -2,6 +2,14 @@ from collections import defaultdict
 from datetime import datetime
 
 
+def safe_float(value):
+
+    try:
+        return float(value)
+    except:
+        return 0.0
+
+
 def analyze_banking(transactions):
 
     total_credit = 0
@@ -22,13 +30,16 @@ def analyze_banking(transactions):
 
     for txn in transactions:
 
-        desc = str(txn["description"]).lower()
+        desc = str(txn.get("description","")).lower()
 
-        credit = float(txn["credit"])
-        debit = float(txn["debit"])
-        balance = float(txn["balance"])
+        credit = safe_float(txn.get("credit"))
+        debit = safe_float(txn.get("debit"))
+        balance = safe_float(txn.get("balance"))
 
-        dates.append(txn["date"])
+        date_value = txn.get("date")
+
+        if date_value:
+            dates.append(date_value)
 
         total_credit += credit
         total_debit += debit
@@ -39,11 +50,23 @@ def analyze_banking(transactions):
         if debit > 0:
             debit_txn += 1
 
+        # =====================================
+        # INCOME DETECTION
+        # =====================================
+
         if "salary" in desc:
             salary_income += credit
 
-        if "upi" in desc:
+        # =====================================
+        # EXPENSE DETECTION
+        # =====================================
+
+        if "upi" in desc or "upi/" in desc:
             upi_spend += debit
+
+        # =====================================
+        # BEHAVIOR FLAGS
+        # =====================================
 
         if "return" in desc or "bounce" in desc:
             bounce += 1
@@ -51,17 +74,34 @@ def analyze_banking(transactions):
         if balance < 0:
             negative_balance += 1
 
-        month = extract_month(txn["date"])
+        # =====================================
+        # MONTHLY TREND
+        # =====================================
+
+        month = extract_month(date_value)
 
         if month:
+
             monthly_credit[month] += credit
             monthly_debit[month] += debit
 
 
+    # =====================================
+    # SUMMARY
+    # =====================================
+
     net = total_credit - total_debit
 
     expense_ratio = (total_debit / total_credit * 100) if total_credit else 0
-    salary_dependency = (salary_income / total_credit * 100) if total_credit else 0
+
+    salary_dependency = (
+        salary_income / total_credit * 100
+        if total_credit else 0
+    )
+
+    # =====================================
+    # RISK SCORING
+    # =====================================
 
     score = 100
 
@@ -77,19 +117,29 @@ def analyze_banking(transactions):
     score = max(0, min(score, 100))
 
 
+    # =====================================
+    # RISK GRADE
+    # =====================================
+
     grade = "A"
     status = "Strong"
 
     if score < 50:
         grade = "D"
         status = "Weak"
+
     elif score < 65:
         grade = "C"
         status = "Moderate"
+
     elif score < 80:
         grade = "B"
         status = "Good"
 
+
+    # =====================================
+    # FINAL RESPONSE
+    # =====================================
 
     return {
 
@@ -134,7 +184,9 @@ def analyze_banking(transactions):
                     "credit":round(monthly_credit[m],2),
                     "debit":round(monthly_debit[m],2)
                 }
-                for m in sorted(set(monthly_credit)|set(monthly_debit))
+                for m in sorted(
+                    set(monthly_credit) | set(monthly_debit)
+                )
             ]
         }
     }
@@ -143,7 +195,11 @@ def analyze_banking(transactions):
 def extract_month(date):
 
     try:
+
         d = datetime.strptime(date,"%d/%m/%y")
+
         return d.strftime("%Y-%m")
+
     except:
+
         return None
