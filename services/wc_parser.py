@@ -85,7 +85,7 @@ def fuzzy_match(keyword, text, threshold=0.75):
 
 
 # ==========================================================
-# PDF TEXT
+# PDF TEXT EXTRACTION
 # ==========================================================
 
 def extract_pdf_text(file_bytes):
@@ -93,6 +93,7 @@ def extract_pdf_text(file_bytes):
     text = ""
 
     try:
+
         with pdfplumber.open(BytesIO(file_bytes)) as pdf:
 
             for page in pdf.pages:
@@ -146,7 +147,7 @@ def extract_image_ocr(file_bytes):
 
 
 # ==========================================================
-# WORD TEXT
+# DOCX TEXT
 # ==========================================================
 
 def extract_docx_text(file_bytes):
@@ -227,7 +228,7 @@ def extract_from_dataframe(df):
 
 
 # ==========================================================
-# TEXT EXTRACTION
+# TEXT EXTRACTION (OCR FIXED)
 # ==========================================================
 
 def extract_from_text(text):
@@ -238,13 +239,14 @@ def extract_from_text(text):
 
     lines = text.split("\n")
 
-    prev_line = ""
-
-    for line in lines:
+    for i, line in enumerate(lines):
 
         clean_line = line.lower()
 
-        combined_line = prev_line + " " + clean_line
+        if i + 1 < len(lines):
+            combined_line = clean_line + " " + lines[i+1].lower()
+        else:
+            combined_line = clean_line
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
 
@@ -257,14 +259,15 @@ def extract_from_text(text):
 
                     numbers = extract_numbers([combined_line])
 
+                    if not numbers and i + 1 < len(lines):
+                        numbers = extract_numbers([lines[i+1]])
+
                     if numbers:
 
                         value = pick_latest_value(numbers) * multiplier
 
                         if abs(value) > 100:
                             result[key] = value
-
-        prev_line = clean_line
 
     return result
 
@@ -298,7 +301,7 @@ def extract_numbers(values):
 
 
 # ==========================================================
-# LATEST YEAR DETECTION
+# PICK LATEST YEAR
 # ==========================================================
 
 def pick_latest_value(numbers):
@@ -310,7 +313,7 @@ def pick_latest_value(numbers):
 
 
 # ==========================================================
-# CAM FINANCIAL CALCULATIONS
+# FINANCIAL CALCULATIONS
 # ==========================================================
 
 def calculate_financial_metrics(data):
@@ -333,16 +336,23 @@ def calculate_financial_metrics(data):
     current_liabilities = data.get("current_liabilities",0)
 
     total_income = sales + other_income
+
     pbdt = total_income - expenses
+
     pbt = pbdt - interest - depreciation
+
     pat = pbt - tax
+
     cash_profit = pat + depreciation
 
     networth = equity + reserves
+
     total_debt = short_debt + long_debt + unsecured
 
     current_ratio = current_assets / current_liabilities if current_liabilities else 0
+
     debt_equity = total_debt / networth if networth else 0
+
     net_margin = pat / sales if sales else 0
 
     return {
