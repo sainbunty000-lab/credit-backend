@@ -7,6 +7,7 @@ from pdf2image import convert_from_bytes
 from PIL import Image
 from io import BytesIO
 from docx import Document
+from difflib import SequenceMatcher
 
 from services.accounting_dictionary import ACCOUNTING_KEYWORDS
 
@@ -24,13 +25,11 @@ def parse_financial_file(file, filename):
 
     filename = filename.lower()
 
-    # CSV
     if filename.endswith(".csv"):
 
         df = pd.read_csv(BytesIO(file_bytes))
         extracted = extract_from_dataframe(df)
 
-    # EXCEL
     elif filename.endswith(".xlsx"):
 
         df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
@@ -41,7 +40,6 @@ def parse_financial_file(file, filename):
         df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
         extracted = extract_from_dataframe(df)
 
-    # PDF
     elif filename.endswith(".pdf"):
 
         text = extract_pdf_text(file_bytes)
@@ -51,13 +49,11 @@ def parse_financial_file(file, filename):
 
         extracted = extract_from_text(text)
 
-    # WORD
     elif filename.endswith(".docx"):
 
         text = extract_docx_text(file_bytes)
         extracted = extract_from_text(text)
 
-    # IMAGE
     elif filename.endswith((".jpg",".jpeg",".png")):
 
         text = extract_image_ocr(file_bytes)
@@ -75,24 +71,21 @@ def parse_financial_file(file, filename):
 
 
 # ==========================================================
-# STATEMENT TYPE DETECTION
+# FUZZY MATCH
 # ==========================================================
 
-def detect_statement_type(text):
+def fuzzy_match(keyword, text, threshold=0.75):
 
+    keyword = keyword.lower()
     text = text.lower()
 
-    if "balance sheet" in text:
-        return "balance_sheet"
+    ratio = SequenceMatcher(None, keyword, text).ratio()
 
-    if "profit and loss" in text or "statement of profit and loss" in text:
-        return "pnl"
-
-    return "unknown"
+    return ratio >= threshold
 
 
 # ==========================================================
-# PDF TEXT EXTRACTION
+# PDF TEXT
 # ==========================================================
 
 def extract_pdf_text(file_bytes):
@@ -100,7 +93,6 @@ def extract_pdf_text(file_bytes):
     text = ""
 
     try:
-
         with pdfplumber.open(BytesIO(file_bytes)) as pdf:
 
             for page in pdf.pages:
@@ -117,7 +109,7 @@ def extract_pdf_text(file_bytes):
 
 
 # ==========================================================
-# OCR FOR SCANNED PDF
+# OCR PDF
 # ==========================================================
 
 def extract_pdf_ocr(file_bytes):
@@ -154,7 +146,7 @@ def extract_image_ocr(file_bytes):
 
 
 # ==========================================================
-# WORD EXTRACTION
+# WORD TEXT
 # ==========================================================
 
 def extract_docx_text(file_bytes):
@@ -182,23 +174,17 @@ def detect_multiplier(text):
 
     text = text.lower()
 
-    if "in thousand" in text or "in thousands" in text:
+    if "thousand" in text:
         return 1000
 
-    if "in lakh" in text or "in lakhs" in text:
+    if "lakh" in text or "lakhs" in text:
         return 100000
 
-    if "in million" in text:
+    if "crore" in text or "crores" in text:
+        return 10000000
+
+    if "million" in text:
         return 1000000
-
-    if "in crore" in text or "in crores" in text:
-        return 10000000
-
-    if "₹ in lakhs" in text:
-        return 100000
-
-    if "₹ in crores" in text:
-        return 10000000
 
     return 1
 
@@ -212,12 +198,12 @@ def extract_from_dataframe(df):
     result = {}
 
     text_blob = " ".join(df.astype(str).values.flatten())
+
     multiplier = detect_multiplier(text_blob)
 
     for _, row in df.iterrows():
 
         row_text = " ".join(str(v).lower() for v in row.values)
-        normalized_row = row_text.replace(" ","").replace(",","")
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
 
@@ -226,18 +212,13 @@ def extract_from_dataframe(df):
 
             for keyword in keywords:
 
-                keyword_norm = keyword.lower().replace(" ","")
-
-                if keyword_norm in normalized_row:
+                if keyword in row_text or fuzzy_match(keyword, row_text):
 
                     numbers = extract_numbers(row.values)
 
                     if numbers:
 
-                        if len(numbers) >= 2:
-                            value = numbers[-2] * multiplier
-                        else:
-                            value = numbers[-1] * multiplier
+                        value = pick_latest_value(numbers) * multiplier
 
                         if abs(value) > 100:
                             result[key] = value
@@ -252,14 +233,18 @@ def extract_from_dataframe(df):
 def extract_from_text(text):
 
     result = {}
+
     multiplier = detect_multiplier(text)
 
     lines = text.split("\n")
 
+    prev_line = ""
+
     for line in lines:
 
-        clean_line = line.lower().replace(",","")
-        normalized_line = clean_line.replace(" ","")
+        clean_line = line.lower()
+
+        combined_line = prev_line + " " + clean_line
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
 
@@ -268,21 +253,18 @@ def extract_from_text(text):
 
             for keyword in keywords:
 
-                keyword_norm = keyword.lower().replace(" ","")
+                if keyword in combined_line or fuzzy_match(keyword, combined_line):
 
-                if keyword_norm in normalized_line:
-
-                    numbers = extract_numbers([line])
+                    numbers = extract_numbers([combined_line])
 
                     if numbers:
 
-                        if len(numbers) >= 2:
-                            value = numbers[-2] * multiplier
-                        else:
-                            value = numbers[-1] * multiplier
+                        value = pick_latest_value(numbers) * multiplier
 
                         if abs(value) > 100:
                             result[key] = value
+
+        prev_line = clean_line
 
     return result
 
@@ -313,6 +295,18 @@ def extract_numbers(values):
                 pass
 
     return numbers
+
+
+# ==========================================================
+# LATEST YEAR DETECTION
+# ==========================================================
+
+def pick_latest_value(numbers):
+
+    if len(numbers) >= 2:
+        return numbers[-2]
+
+    return numbers[-1]
 
 
 # ==========================================================
