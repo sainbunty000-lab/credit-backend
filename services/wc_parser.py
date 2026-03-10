@@ -23,22 +23,18 @@ def parse_financial_file(file, filename):
 
     filename = filename.lower()
 
-    # CSV
     if filename.endswith(".csv"):
         df = pd.read_csv(BytesIO(file_bytes))
-        return extract_from_dataframe(df)
+        extracted = extract_from_dataframe(df)
 
-    # XLSX
     elif filename.endswith(".xlsx"):
         df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
-        return extract_from_dataframe(df)
+        extracted = extract_from_dataframe(df)
 
-    # XLS
     elif filename.endswith(".xls"):
         df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
-        return extract_from_dataframe(df)
+        extracted = extract_from_dataframe(df)
 
-    # PDF
     elif filename.endswith(".pdf"):
 
         text = extract_pdf_text(file_bytes)
@@ -46,17 +42,23 @@ def parse_financial_file(file, filename):
         if not text.strip():
             text = extract_pdf_ocr(file_bytes)
 
-        return extract_from_text(text)
+        extracted = extract_from_text(text)
 
-    # IMAGE
     elif filename.endswith((".jpg",".jpeg",".png")):
 
         text = extract_image_ocr(file_bytes)
 
-        return extract_from_text(text)
+        extracted = extract_from_text(text)
 
     else:
         raise ValueError("Unsupported file type")
+
+    calculations = calculate_financial_metrics(extracted)
+
+    return {
+        "inputs": extracted,
+        "calculations": calculations
+    }
 
 
 # ==========================================================
@@ -85,7 +87,7 @@ def extract_pdf_text(file_bytes):
 
 
 # ==========================================================
-# OCR EXTRACTION (SCANNED PDF)
+# OCR FOR SCANNED PDF
 # ==========================================================
 
 def extract_pdf_ocr(file_bytes):
@@ -96,10 +98,7 @@ def extract_pdf_ocr(file_bytes):
 
     for img in images:
 
-        ocr_text = pytesseract.image_to_string(
-            img,
-            config="--psm 6"
-        )
+        ocr_text = pytesseract.image_to_string(img, config="--psm 6")
 
         text += ocr_text + "\n"
 
@@ -116,10 +115,7 @@ def extract_image_ocr(file_bytes):
 
         image = Image.open(BytesIO(file_bytes))
 
-        text = pytesseract.image_to_string(
-            image,
-            config="--psm 6"
-        )
+        text = pytesseract.image_to_string(image, config="--psm 6")
 
         return text
 
@@ -258,3 +254,64 @@ def extract_numbers(values):
                 pass
 
     return numbers
+
+
+# ==========================================================
+# CAM FINANCIAL CALCULATIONS
+# ==========================================================
+
+def calculate_financial_metrics(data):
+
+    sales = data.get("sales",0)
+    other_income = data.get("other_income",0)
+    expenses = data.get("total_expenses",0)
+    interest = data.get("interest",0)
+    depreciation = data.get("depreciation",0)
+    tax = data.get("tax",0)
+
+    equity = data.get("equity_share_capital",0)
+    reserves = data.get("reserves",0)
+
+    short_debt = data.get("short_term_debt",0)
+    long_debt = data.get("long_term_debt",0)
+    unsecured = data.get("unsecured_loans",0)
+
+    current_assets = data.get("current_assets",0)
+    current_liabilities = data.get("current_liabilities",0)
+
+    # PROFIT
+    total_income = sales + other_income
+
+    pbdt = total_income - expenses
+
+    pbt = pbdt - interest - depreciation
+
+    pat = pbt - tax
+
+    cash_profit = pat + depreciation
+
+    # NETWORTH
+    networth = equity + reserves
+
+    # TOTAL DEBT
+    total_debt = short_debt + long_debt + unsecured
+
+    # RATIOS
+    current_ratio = current_assets / current_liabilities if current_liabilities else 0
+
+    debt_equity = total_debt / networth if networth else 0
+
+    net_margin = pat / sales if sales else 0
+
+    return {
+        "total_income": total_income,
+        "pbdt": pbdt,
+        "pbt": pbt,
+        "pat": pat,
+        "cash_profit": cash_profit,
+        "networth": networth,
+        "total_debt": total_debt,
+        "current_ratio": current_ratio,
+        "debt_equity": debt_equity,
+        "net_margin": net_margin
+    }
