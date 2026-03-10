@@ -4,60 +4,73 @@ import math
 
 def calculate_wc_logic(data):
 
-    ca = default_zero(data.get("current_assets"))
-    cl = default_zero(data.get("current_liabilities"))
-
-    inventory = default_zero(data.get("inventory"))
-    receivables = default_zero(data.get("receivables"))
-    payables = default_zero(data.get("payables"))
-
-    sales = default_zero(data.get("annual_sales"))
-    cogs = default_zero(data.get("cogs"))
-
-    bank_credit = default_zero(data.get("bank_credit"))
-
-    other_ca = default_zero(data.get("other_current_assets"))
-    other_cl = default_zero(data.get("other_current_liabilities"))
-
-    cash_bank = default_zero(data.get("cash_bank"))
-
     # =====================================
-    # AUTO FIX PARSER MISSING VALUES
+    # PARSER STRUCTURE
     # =====================================
 
-    calculated_ca = inventory + receivables + other_ca + cash_bank
+    inputs = data.get("inputs", {})
+    calc = data.get("calculations", {})
 
-    if ca == 0 or ca < calculated_ca:
-        ca = calculated_ca
+    # =====================================
+    # EXTRACT INPUTS
+    # =====================================
 
-    calculated_cl = payables + other_cl
+    inventory = default_zero(inputs.get("inventory"))
+    receivables = default_zero(inputs.get("sundry_debtors"))
+    payables = default_zero(inputs.get("current_liabilities"))
 
-    if cl == 0 or cl < calculated_cl:
-        cl = calculated_cl
+    other_ca = default_zero(inputs.get("other_current_assets"))
+    other_cl = default_zero(inputs.get("other_current_liabilities"))
+
+    cash_bank = default_zero(inputs.get("cash_bank"))
+
+    sales = default_zero(inputs.get("sales"))
+    cogs = default_zero(inputs.get("cost_of_sales"))
+
+    bank_credit = default_zero(inputs.get("bank_credit"))
+
+    # From financial calculations
+    networth = default_zero(calc.get("networth"))
+    total_debt = default_zero(calc.get("total_debt"))
+
+    # =====================================
+    # CURRENT ASSETS / LIABILITIES
+    # =====================================
+
+    ca = inventory + receivables + other_ca + cash_bank
+    cl = payables + other_cl
 
     if cogs == 0 and sales > 0:
         cogs = sales * 0.70
 
     # =====================================
-    # CORE RATIOS
+    # WORKING CAPITAL
     # =====================================
 
     nwc = ca - cl
 
     current_ratio = safe_divide(ca, cl)
+
     quick_ratio = safe_divide((ca - inventory), cl)
 
     wc_turnover = safe_divide(sales, nwc)
 
+    # =====================================
+    # OPERATING CYCLE
+    # =====================================
+
     inventory_days = safe_divide(inventory, cogs) * 365
+
     receivable_days = safe_divide(receivables, sales) * 365
+
     payable_days = safe_divide(payables, cogs) * 365
 
     operating_cycle = inventory_days + receivable_days
+
     gap_days = max(0, operating_cycle - payable_days)
 
     # =====================================
-    # BORROWING BASE
+    # DRAWING POWER
     # =====================================
 
     eligible_stock = inventory * 0.5
@@ -67,13 +80,14 @@ def calculate_wc_logic(data):
     drawing_power = max(0, drawing_power)
 
     # =====================================
-    # MPBF METHOD
+    # MPBF (TANDON METHOD)
     # =====================================
 
     stock = inventory
     debtors = receivables
 
     gca = stock + debtors + other_ca
+
     total_cl = payables + other_cl
 
     wcg = gca - total_cl
@@ -140,7 +154,7 @@ def calculate_wc_logic(data):
     )
 
     # =====================================
-    # SAFE CLEAN FUNCTION
+    # CLEAN FUNCTION
     # =====================================
 
     def clean(value):
@@ -153,7 +167,7 @@ def calculate_wc_logic(data):
         return round(value, 2)
 
     # =====================================
-    # FINAL RESPONSE
+    # FINAL RESULT
     # =====================================
 
     return {
@@ -176,6 +190,11 @@ def calculate_wc_logic(data):
             "mpbf": clean(mpbf),
             "turnover_limit": clean(turnover_limit),
             "recommended_limit": clean(recommended_limit)
+        },
+
+        "capital_structure": {
+            "networth": clean(networth),
+            "total_debt": clean(total_debt)
         },
 
         "charts": {
