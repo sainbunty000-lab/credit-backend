@@ -1,10 +1,12 @@
-FROM python:3.10.13-slim-bullseye
+FROM python:3.10-slim
 
-# Prevent Python from writing .pyc files
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1
-ENV PIP_NO_CACHE_DIR=1
+# ===============================
+# Environment Variables
+# ===============================
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
 
 # ===============================
 # Install System Dependencies
@@ -12,11 +14,10 @@ ENV PIP_NO_CACHE_DIR=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
-    ghostscript \
     poppler-utils \
     tesseract-ocr \
     tesseract-ocr-eng \
-    libtesseract-dev \
+    ghostscript \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
@@ -26,21 +27,42 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ===============================
+# Create App User (Security)
+# ===============================
+RUN useradd -m appuser
+
+# ===============================
 # Set Working Directory
 # ===============================
 WORKDIR /app
 
-# Copy requirements first (for caching)
+# ===============================
+# Install Python Dependencies
+# ===============================
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt
 
-# Copy application code
+# ===============================
+# Copy Application Code
+# ===============================
 COPY . .
 
 # ===============================
-# Start FastAPI
+# Change Ownership
 # ===============================
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+RUN chown -R appuser:appuser /app
+
+USER appuser
+
+# ===============================
+# Healthcheck
+# ===============================
+HEALTHCHECK --interval=30s --timeout=5s \
+ CMD curl -f http://localhost:${PORT:-8000}/docs || exit 1
+
+# ===============================
+# Run FastAPI (Production Mode)
+# ===============================
+CMD ["sh", "-c", "gunicorn main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8000} --workers 2"]
