@@ -18,63 +18,73 @@ from services.accounting_dictionary import ACCOUNTING_KEYWORDS
 
 def parse_financial_file(file, filename):
 
-    if isinstance(file, bytes):
-        file_bytes = file
-    else:
-        file_bytes = file.read()
+    try:
 
-    filename = filename.lower()
+        if isinstance(file, bytes):
+            file_bytes = file
+        else:
+            file_bytes = file.read()
 
-    if filename.endswith(".csv"):
+        filename = filename.lower()
 
-        df = pd.read_csv(BytesIO(file_bytes))
-        extracted = extract_from_dataframe(df)
+        if filename.endswith(".csv"):
 
-    elif filename.endswith(".xlsx"):
+            df = pd.read_csv(BytesIO(file_bytes))
+            extracted = extract_from_dataframe(df)
 
-        df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
-        extracted = extract_from_dataframe(df)
+        elif filename.endswith(".xlsx"):
 
-    elif filename.endswith(".xls"):
+            df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
+            extracted = extract_from_dataframe(df)
 
-        df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
-        extracted = extract_from_dataframe(df)
+        elif filename.endswith(".xls"):
 
-    elif filename.endswith(".pdf"):
+            df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
+            extracted = extract_from_dataframe(df)
 
-        text = extract_pdf_text(file_bytes)
+        elif filename.endswith(".pdf"):
 
-        if not text.strip():
-            text = extract_pdf_ocr(file_bytes)
+            text = extract_pdf_text(file_bytes)
 
-        extracted = extract_from_text(text)
+            if not text.strip():
+                text = extract_pdf_ocr(file_bytes)
 
-    elif filename.endswith(".docx"):
+            extracted = extract_from_text(text)
 
-        text = extract_docx_text(file_bytes)
-        extracted = extract_from_text(text)
+        elif filename.endswith(".docx"):
 
-    elif filename.endswith((".jpg",".jpeg",".png")):
+            text = extract_docx_text(file_bytes)
+            extracted = extract_from_text(text)
 
-        text = extract_image_ocr(file_bytes)
-        extracted = extract_from_text(text)
+        elif filename.endswith((".jpg",".jpeg",".png")):
 
-    else:
-        raise ValueError("Unsupported file type")
+            text = extract_image_ocr(file_bytes)
+            extracted = extract_from_text(text)
 
-    calculations = calculate_financial_metrics(extracted)
+        else:
+            raise ValueError("Unsupported file type")
 
-    return {
-        "inputs": extracted,
-        "calculations": calculations
-    }
+        calculations = calculate_financial_metrics(extracted)
+
+        return {
+            "inputs": extracted,
+            "calculations": calculations
+        }
+
+    except Exception as e:
+
+        return {
+            "inputs": {},
+            "calculations": {},
+            "error": str(e)
+        }
 
 
 # ==========================================================
 # FUZZY MATCH
 # ==========================================================
 
-def fuzzy_match(keyword, text, threshold=0.75):
+def fuzzy_match(keyword, text, threshold=0.80):
 
     keyword = keyword.lower()
     text = text.lower()
@@ -121,9 +131,11 @@ def extract_pdf_ocr(file_bytes):
 
     for img in images:
 
-        ocr_text = pytesseract.image_to_string(img, config="--psm 6")
-
-        text += ocr_text + "\n"
+        try:
+            ocr_text = pytesseract.image_to_string(img)
+            text += ocr_text + "\n"
+        except:
+            pass
 
     return text
 
@@ -138,7 +150,7 @@ def extract_image_ocr(file_bytes):
 
         image = Image.open(BytesIO(file_bytes))
 
-        text = pytesseract.image_to_string(image, config="--psm 6")
+        text = pytesseract.image_to_string(image)
 
         return text
 
@@ -221,14 +233,14 @@ def extract_from_dataframe(df):
 
                         value = pick_latest_value(numbers) * multiplier
 
-                        if abs(value) > 100:
+                        if abs(value) > 50:
                             result[key] = value
 
     return result
 
 
 # ==========================================================
-# TEXT EXTRACTION (OCR FIXED)
+# TEXT EXTRACTION
 # ==========================================================
 
 def extract_from_text(text):
@@ -266,7 +278,7 @@ def extract_from_text(text):
 
                         value = pick_latest_value(numbers) * multiplier
 
-                        if abs(value) > 100:
+                        if abs(value) > 50:
                             result[key] = value
 
     return result
@@ -301,7 +313,7 @@ def extract_numbers(values):
 
 
 # ==========================================================
-# PICK LATEST YEAR
+# PICK LATEST VALUE
 # ==========================================================
 
 def pick_latest_value(numbers):
@@ -318,10 +330,11 @@ def pick_latest_value(numbers):
 
 def calculate_financial_metrics(data):
 
-    sales = data.get("sales",0)
+    sales = data.get("annual_sales",0)
     other_income = data.get("other_income",0)
-    expenses = data.get("total_expenses",0)
-    interest = data.get("interest",0)
+    expenses = data.get("operating_expenses",0)
+
+    interest = data.get("interest_expense",0)
     depreciation = data.get("depreciation",0)
     tax = data.get("tax",0)
 
@@ -338,21 +351,16 @@ def calculate_financial_metrics(data):
     total_income = sales + other_income
 
     pbdt = total_income - expenses
-
     pbt = pbdt - interest - depreciation
-
     pat = pbt - tax
 
     cash_profit = pat + depreciation
 
     networth = equity + reserves
-
     total_debt = short_debt + long_debt + unsecured
 
     current_ratio = current_assets / current_liabilities if current_liabilities else 0
-
     debt_equity = total_debt / networth if networth else 0
-
     net_margin = pat / sales if sales else 0
 
     return {
