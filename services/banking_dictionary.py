@@ -1,67 +1,216 @@
-# =========================================
+# ==========================================================
 # BANKING KEYWORD DICTIONARY
-# =========================================
+# Used for bank statement categorization
+# ==========================================================
+
+
+# ==========================================================
+# CREDIT TRANSACTIONS
+# ==========================================================
 
 CREDIT_KEYWORDS = [
 
     # Salary
-    "salary", "salary credit", "sal credit",
+    "salary",
+    "salary credit",
+    "sal credit",
+    "salary transfer",
+    "payroll",
+    "wages",
 
     # Transfers
-    "transfer from", "imps credit", "neft credit", "rtgs credit",
+    "transfer from",
+    "neft cr",
+    "rtgs cr",
+    "imps cr",
+    "imps credit",
+    "p2a credit",
+
+    # Incoming UPI
+    "upi cr",
+    "upi received",
+    "upi collect",
+    "received via upi",
 
     # Deposits
-    "cash deposit", "deposit", "cheque deposit", "chq deposit",
+    "cash deposit",
+    "deposit",
+    "cheque deposit",
+    "chq deposit",
 
     # Refunds
-    "refund", "refund credit", "reversal",
+    "refund",
+    "refund credit",
+    "reversal",
+    "chargeback",
 
     # Investments
-    "redemption", "mf redemption", "dividend",
+    "redemption",
+    "mf redemption",
+    "dividend",
+    "mutual fund redemption",
 
     # Cashback
-    "cashback", "reward",
+    "cashback",
+    "reward",
+    "reward credit",
 
     # Interest
-    "interest", "interest credit",
+    "interest",
+    "interest credit",
+    "int cr",
 
-    # Incoming
-    "received", "incoming",
+    # Business income
+    "commission",
+    "bonus",
+    "incentive",
+    "reimbursement",
+    "consulting fee",
+    "professional fee",
 
-    # Business
-    "commission", "bonus", "incentive", "reimbursement"
+    # Incoming payments
+    "received",
+    "incoming",
+    "payment received"
 ]
 
+
+# ==========================================================
+# DEBIT TRANSACTIONS
+# ==========================================================
 
 DEBIT_KEYWORDS = [
 
     # UPI / Wallets
-    "upi", "paytm", "phonepe", "gpay", "amazon pay",
+    "upi",
+    "upi payment",
+    "upi transfer",
+    "paytm",
+    "phonepe",
+    "gpay",
+    "google pay",
+    "amazon pay",
 
-    # Payments
-    "payment", "bill", "billpay",
+    # ATM withdrawals
+    "atm",
+    "atm withdrawal",
+    "cash withdrawal",
+    "atm wdl",
 
-    # ATM
-    "atm", "withdraw", "cash withdrawal",
+    # POS / card
+    "pos",
+    "purchase",
+    "debit card",
+    "card payment",
+    "pos transaction",
 
-    # Card
-    "pos", "purchase", "debit card",
+    # Online shopping
+    "amazon",
+    "flipkart",
+    "swiggy",
+    "zomato",
+    "myntra",
 
     # Transfers
-    "transfer", "neft", "rtgs", "imps",
+    "transfer",
+    "neft",
+    "rtgs",
+    "imps",
+    "p2a",
 
-    # EMI
-    "emi", "loan", "finance", "capital",
+    # EMI / Loans
+    "emi",
+    "loan emi",
+    "nach",
+    "ach debit",
+    "ecs",
+    "loan repayment",
+    "finance",
 
     # Investments
-    "sip", "o-mf",
+    "sip",
+    "mutual fund sip",
+    "o-mf",
 
-    # Ecommerce
-    "amazon", "flipkart", "swiggy", "zomato",
+    # Utilities
+    "bill",
+    "bill payment",
+    "electricity",
+    "gas",
+    "water",
+
+    # Insurance
+    "insurance",
+    "premium",
+
+    # Rent
+    "rent",
 
     # Charges
-    "charges", "bank charge",
+    "charges",
+    "bank charge",
+    "sms charge",
+    "debit charge",
+    "processing fee",
 
-    # Expenses
-    "insurance", "premium", "rent"
+    # Subscriptions
+    "netflix",
+    "spotify",
+    "prime",
+
+    # Travel
+    "uber",
+    "ola",
+    "irctc",
+    "flight booking"
+]
+
+
+# ==========================================================
+# EMI DETECTION
+# ==========================================================
+
+EMI_KEYWORDS = [
+
+    "emi",
+    "loan emi",
+    "nach",
+    "ach debit",
+    "ecs",
+    "loan repayment",
+    "finance",
+    "capital first",
+    "bajaj finance",
+    "home loan",
+    "personal loan"
+]
+
+
+# ==========================================================
+# SALARY DETECTION
+# ==========================================================
+
+SALARY_KEYWORDS = [
+
+    "salary",
+    "sal credit",
+    "salary credit",
+    "salary transfer",
+    "payroll",
+    "wages"
+]
+
+
+# ==========================================================
+# BOUNCE / RETURN
+# ==========================================================
+
+BOUNCE_KEYWORDS = [
+
+    "return",
+    "bounce",
+    "cheque return",
+    "insufficient funds",
+    "return charges",
+    "payment returned"
 ]
