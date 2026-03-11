@@ -1,51 +1,199 @@
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib import colors
-from reportlab.platypus import Table, TableStyle
-from reportlab.lib.units import inch
-from reportlab.platypus import Image
-from reportlab.platypus import BaseDocTemplate
-from reportlab.platypus import Frame
-from reportlab.platypus import PageTemplate
-from reportlab.platypus import KeepTogether
-from reportlab.platypus import ListFlowable
-from reportlab.platypus import ListItem
-from reportlab.platypus import PageBreak
-from reportlab.platypus import Flowable
-from reportlab.platypus import Spacer
-from reportlab.platypus import Paragraph
-from reportlab.platypus import SimpleDocTemplate
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Table
-from reportlab.platypus import TableStyle
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+
+
+# =========================================
+# SAFE VALUE
+# =========================================
+
+def safe(value):
+    if value is None:
+        return "-"
+    return str(value)
+
+
+# =========================================
+# TABLE BUILDER
+# =========================================
+
+def create_table(data):
+
+    table = Table(data, hAlign="LEFT")
+
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+                ("PADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+
+    return table
+
+
+# =========================================
+# CAM PDF GENERATOR
+# =========================================
 
 def generate_cam_pdf(data, filename="cam_report.pdf"):
-    doc = SimpleDocTemplate(f"downloads/{filename}")
-    elements = []
+
     styles = getSampleStyleSheet()
 
-    elements.append(Paragraph("<b>Credit Appraisal Memo</b>", styles["Title"]))
+    doc = SimpleDocTemplate(
+        f"downloads/{filename}",
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=40,
+        bottomMargin=40,
+    )
+
+    elements = []
+
+    # =========================================
+    # TITLE
+    # =========================================
+
+    elements.append(
+        Paragraph("<b>CREDIT APPRAISAL MEMO</b>", styles["Title"])
+    )
+
     elements.append(Spacer(1, 0.3 * inch))
 
+    # =========================================
+    # CUSTOMER DETAILS
+    # =========================================
+
     elements.append(
-        Paragraph(f"Customer Name: {data['customer_name']}", styles["Normal"])
+        Paragraph("<b>Customer Details</b>", styles["Heading2"])
     )
 
-    elements.append(Spacer(1, 0.2 * inch))
+    customer_table = [
+        ["Field", "Value"],
+        ["Customer Name", safe(data.get("customer_name"))],
+        ["Loan Amount", safe(data.get("loan_amount"))],
+        ["Status", safe(data.get("status"))],
+    ]
 
-    wc = data.get("wc_data", {})
-    elements.append(Paragraph("<b>Working Capital</b>", styles["Heading2"]))
+    elements.append(create_table(customer_table))
+
+    elements.append(Spacer(1, 0.25 * inch))
+
+    # =========================================
+    # WORKING CAPITAL SECTION
+    # =========================================
+
+    wc = data.get("wc_data")
+
+    if wc:
+
+        ratios = wc.get("ratios", {})
+        mpbf = wc.get("mpbf_analysis", {})
+
+        elements.append(
+            Paragraph("<b>Working Capital Analysis</b>", styles["Heading2"])
+        )
+
+        wc_table = [
+            ["Metric", "Value"],
+            ["Current Ratio", safe(ratios.get("current_ratio"))],
+            ["Quick Ratio", safe(ratios.get("quick_ratio"))],
+            ["Net Working Capital", safe(ratios.get("nwc"))],
+            ["MPBF", safe(mpbf.get("mpbf"))],
+            ["Recommended Limit", safe(mpbf.get("recommended_limit"))],
+        ]
+
+        elements.append(create_table(wc_table))
+
+        elements.append(Spacer(1, 0.25 * inch))
+
+    # =========================================
+    # BANKING ANALYSIS
+    # =========================================
+
+    banking = data.get("banking_data")
+
+    if banking:
+
+        summary = banking.get("statement_summary", {})
+        risk = banking.get("risk_summary", {})
+
+        elements.append(
+            Paragraph("<b>Banking Behaviour</b>", styles["Heading2"])
+        )
+
+        banking_table = [
+            ["Metric", "Value"],
+            ["Total Credit", safe(summary.get("total_credit"))],
+            ["Total Debit", safe(summary.get("total_debit"))],
+            ["Net Surplus", safe(summary.get("net_surplus"))],
+            ["Risk Score", safe(risk.get("hygiene_score"))],
+            ["Risk Grade", safe(risk.get("risk_grade"))],
+        ]
+
+        elements.append(create_table(banking_table))
+
+        elements.append(Spacer(1, 0.25 * inch))
+
+    # =========================================
+    # AGRICULTURE ANALYSIS
+    # =========================================
+
+    agri = data.get("agri_data")
+
+    if agri:
+
+        income = agri.get("income_analysis", {})
+        emi = agri.get("emi_analysis", {})
+        loan = agri.get("loan_eligibility", {})
+
+        elements.append(
+            Paragraph("<b>Agriculture Eligibility</b>", styles["Heading2"])
+        )
+
+        agri_table = [
+            ["Metric", "Value"],
+            ["Total Adjusted Income", safe(income.get("total_adjusted_income"))],
+            ["Disposable Income", safe(emi.get("disposable_income"))],
+            ["Eligible Loan", safe(loan.get("final_eligible_loan"))],
+        ]
+
+        elements.append(create_table(agri_table))
+
+        elements.append(Spacer(1, 0.25 * inch))
+
+    # =========================================
+    # CREDIT RECOMMENDATION
+    # =========================================
+
     elements.append(
-        Paragraph(f"MPBF: {wc.get('output', {}).get('mpbf', 0)}", styles["Normal"])
+        Paragraph("<b>Credit Recommendation</b>", styles["Heading2"])
     )
 
-    elements.append(Spacer(1, 0.2 * inch))
+    decision_table = [
+        ["Field", "Value"],
+        ["Credit Grade", safe(data.get("credit_grade"))],
+        ["Recommended Limit", safe(data.get("recommended_limit"))],
+        ["Remarks", safe(data.get("remarks"))],
+    ]
 
-    banking = data.get("banking_data", {})
-    elements.append(Paragraph("<b>Banking Analysis</b>", styles["Heading2"]))
-    elements.append(
-        Paragraph(f"Risk Score: {banking.get('risk_score', 0)}", styles["Normal"])
-    )
+    elements.append(create_table(decision_table))
+
+    # =========================================
+    # BUILD PDF
+    # =========================================
 
     doc.build(elements)
+
     return filename
