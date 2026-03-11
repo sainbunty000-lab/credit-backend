@@ -1,4 +1,12 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    Boolean,
+    Index
+)
+
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 
@@ -20,12 +28,18 @@ class CAMReport(Base):
     )
 
     # ==================================================
-    # CUSTOMER INFO
+    # CUSTOMER INFORMATION
     # ==================================================
 
     customer_name = Column(
         String(255),
         nullable=False,
+        index=True
+    )
+
+    customer_id = Column(
+        String(100),
+        nullable=True,
         index=True
     )
 
@@ -36,20 +50,45 @@ class CAMReport(Base):
     wc_data = Column(
         JSONB,
         nullable=True,
-        default=dict
+        default=lambda: {}
     )
 
     agri_data = Column(
         JSONB,
         nullable=True,
-        default=dict
+        default=lambda: {}
     )
 
     banking_data = Column(
         JSONB,
         nullable=True,
-        default=dict
+        default=lambda: {}
     )
+
+    # ==================================================
+    # DECISION METRICS (OPTIONAL BUT IMPORTANT)
+    # ==================================================
+
+    recommended_limit = Column(
+        Integer,
+        nullable=True
+    )
+
+    risk_grade = Column(
+        String(5),
+        nullable=True
+    )
+
+    loan_type = Column(
+        String(50),
+        nullable=True
+    )
+
+    # Example loan types
+    # Working Capital
+    # Agriculture
+    # Personal
+    # MSME
 
     # ==================================================
     # REPORT STATUS
@@ -61,24 +100,31 @@ class CAMReport(Base):
         index=True
     )
 
-    # Example statuses:
+    # Possible statuses
     # Draft
     # Under Review
     # Approved
     # Rejected
 
     # ==================================================
-    # METADATA
+    # AUDIT / METADATA
     # ==================================================
 
     created_at = Column(
         DateTime(timezone=True),
-        server_default=func.now()
+        server_default=func.now(),
+        nullable=False
     )
 
     updated_at = Column(
         DateTime(timezone=True),
+        server_default=func.now(),
         onupdate=func.now()
+    )
+
+    created_by = Column(
+        String(100),
+        nullable=True
     )
 
     # ==================================================
@@ -87,5 +133,27 @@ class CAMReport(Base):
 
     is_deleted = Column(
         Boolean,
-        default=False
+        default=False,
+        index=True
     )
+
+    deleted_at = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
+
+# ==================================================
+# INDEXES (IMPORTANT FOR PERFORMANCE)
+# ==================================================
+
+Index(
+    "idx_cam_customer_status",
+    CAMReport.customer_name,
+    CAMReport.status
+)
+
+Index(
+    "idx_cam_created_at",
+    CAMReport.created_at
+)
