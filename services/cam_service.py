@@ -1,19 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-
-from core.database import get_db
+from sqlalchemy import desc
 from models.cam import CAMReport
-from schemas.cam_schema import CAMCreate, CAMUpdate, CAMSubmit
-
-router = APIRouter(prefix="/cam", tags=["CAM Dashboard"])
 
 
-# ---------------------------------------------------
+# ======================================================
 # CREATE CAM REPORT
-# ---------------------------------------------------
+# ======================================================
 
-@router.post("/create")
-def create_cam(data: CAMCreate, db: Session = Depends(get_db)):
+def create_cam_report(data, db: Session):
 
     report = CAMReport(
         customer_name=data.customer_name,
@@ -28,24 +22,23 @@ def create_cam(data: CAMCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(report)
 
-    return {
-        "report_id": report.id,
-        "status": report.status,
-        "message": "CAM Draft Created"
-    }
+    return report
 
 
-# ---------------------------------------------------
-# AUTOSAVE DASHBOARD
-# ---------------------------------------------------
+# ======================================================
+# AUTOSAVE CAM REPORT
+# ======================================================
 
-@router.put("/autosave/{report_id}")
-def autosave_cam(report_id: int, data: CAMUpdate, db: Session = Depends(get_db)):
+def autosave_cam_report(report_id: int, data, db: Session):
 
-    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
+    report = (
+        db.query(CAMReport)
+        .filter(CAMReport.id == report_id, CAMReport.is_deleted == False)
+        .first()
+    )
 
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        return None
 
     if data.wc_data is not None:
         report.wc_data = data.wc_data
@@ -59,84 +52,125 @@ def autosave_cam(report_id: int, data: CAMUpdate, db: Session = Depends(get_db))
     if data.loan_amount is not None:
         report.loan_amount = data.loan_amount
 
-    if data.credit_grade is not None:
+    if hasattr(data, "credit_grade") and data.credit_grade is not None:
         report.credit_grade = data.credit_grade
 
-    if data.remarks is not None:
+    if hasattr(data, "remarks") and data.remarks is not None:
         report.remarks = data.remarks
+
+    if hasattr(data, "status") and data.status is not None:
+        report.status = data.status
 
     db.commit()
 
-    return {"status": "Autosaved"}
-    
+    return report
 
-# ---------------------------------------------------
-# SUBMIT FINAL CAM
-# ---------------------------------------------------
 
-@router.post("/submit/{report_id}")
-def submit_cam(report_id: int, data: CAMSubmit, db: Session = Depends(get_db)):
+# ======================================================
+# SUBMIT CAM REPORT
+# ======================================================
 
-    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
+def submit_cam_report(report_id: int, data, db: Session):
+
+    report = (
+        db.query(CAMReport)
+        .filter(CAMReport.id == report_id, CAMReport.is_deleted == False)
+        .first()
+    )
 
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        return None
 
     report.credit_grade = data.credit_grade
     report.remarks = data.remarks
     report.status = "Submitted"
 
+    if hasattr(data, "approved_limit") and data.approved_limit:
+        report.recommended_limit = data.approved_limit
+
     db.commit()
-
-    return {"status": "CAM Submitted"}
-    
-
-# ---------------------------------------------------
-# GET SINGLE REPORT
-# ---------------------------------------------------
-
-@router.get("/{report_id}")
-def get_cam(report_id: int, db: Session = Depends(get_db)):
-
-    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
-
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
 
     return report
 
 
-# ---------------------------------------------------
-# LIST ALL CAM REPORTS
-# ---------------------------------------------------
+# ======================================================
+# GET SINGLE CAM REPORT
+# ======================================================
 
-@router.get("/all")
-def get_all_cams(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
+def get_cam_report(report_id: int, db: Session):
+
+    return (
+        db.query(CAMReport)
+        .filter(CAMReport.id == report_id, CAMReport.is_deleted == False)
+        .first()
+    )
+
+
+# ======================================================
+# GET ALL CAM REPORTS
+# ======================================================
+
+def get_all_cam_reports(skip: int, limit: int, search: str, db: Session):
+
+    query = db.query(CAMReport).filter(CAMReport.is_deleted == False)
+
+    if search:
+        query = query.filter(
+            CAMReport.customer_name.ilike(f"%{search}%")
+        )
+
+    total = query.count()
 
     reports = (
-        db.query(CAMReport)
-        .order_by(CAMReport.created_at.desc())
+        query
+        .order_by(desc(CAMReport.created_at))
         .offset(skip)
         .limit(limit)
         .all()
     )
 
-    return reports
+    return total, reports
 
 
-# ---------------------------------------------------
-# DELETE CAM
-# ---------------------------------------------------
+# ======================================================
+# SOFT DELETE CAM REPORT
+# ======================================================
 
-@router.delete("/{report_id}")
-def delete_cam(report_id: int, db: Session = Depends(get_db)):
+def delete_cam_report(report_id: int, db: Session):
 
-    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
+    report = (
+        db.query(CAMReport)
+        .filter(CAMReport.id == report_id, CAMReport.is_deleted == False)
+        .first()
+    )
 
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        return None
 
-    db.delete(report)
+    report.is_deleted = True
+
     db.commit()
 
-    return {"status": "Deleted"}
+    return report
+
+
+# ======================================================
+# RESTORE CAM REPORT
+# ======================================================
+
+def restore_cam_report(report_id: int, db: Session):
+
+    report = (
+        db.query(CAMReport)
+        .filter(CAMReport.id == report_id, CAMReport.is_deleted == True)
+        .first()
+    )
+
+    if not report:
+        return None
+
+    report.is_deleted = False
+
+    db.commit()
+
+    return report
