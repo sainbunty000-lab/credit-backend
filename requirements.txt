@@ -1,25 +1,53 @@
-fastapi
-uvicorn[standard]
+# ===============================
+# FASTAPI STACK
+# ===============================
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+gunicorn==21.2.0
 
-pandas
-numpy
+# ===============================
+# DATA PROCESSING
+# ===============================
+pandas==2.2.2
+numpy==1.26.4
 
-pdfplumber
-pdfminer.six
+# ===============================
+# PDF / DOCUMENT PARSING
+# ===============================
+pdfplumber==0.10.3
+pdfminer.six==20231228
+pytesseract==0.3.10
+pdf2image==1.17.0
+Pillow==10.3.0
 
-pytesseract>=0.3.10
-pdf2image
-Pillow
-
-openpyxl
+# ===============================
+# EXCEL SUPPORT
+# ===============================
+openpyxl==3.1.2
 xlrd==2.0.1
 
-python-multipart
-python-dotenv
+# ===============================
+# WORD DOCUMENT SUPPORT
+# ===============================
+python-docx==1.1.0
 
-reportlab
+# ===============================
+# FILE UPLOAD
+# ===============================
+python-multipart==0.0.9
 
-sqlalchemy
-psycopg2-binary
+# ===============================
+# ENVIRONMENT VARIABLES
+# ===============================
+python-dotenv==1.0.1
 
-python-docx
+# ===============================
+# PDF REPORT GENERATION
+# ===============================
+reportlab==4.1.0
+
+# ===============================
+# DATABASE
+# ===============================
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
