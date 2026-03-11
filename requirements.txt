@@ -1,5 +1,5 @@
 # ===============================
-# FASTAPI STACK
+# FASTAPI
 # ===============================
 fastapi==0.110.0
 uvicorn[standard]==0.29.0
@@ -12,7 +12,7 @@ pandas==2.2.2
 numpy==1.26.4
 
 # ===============================
-# PDF / DOCUMENT PARSING
+# DOCUMENT PARSING
 # ===============================
 pdfplumber==0.10.3
 pdfminer.six==20231228
@@ -21,13 +21,13 @@ pdf2image==1.17.0
 Pillow==10.3.0
 
 # ===============================
-# EXCEL SUPPORT
+# EXCEL
 # ===============================
 openpyxl==3.1.2
 xlrd==2.0.1
 
 # ===============================
-# WORD DOCUMENT SUPPORT
+# WORD DOCUMENT
 # ===============================
 python-docx==1.1.0
 
