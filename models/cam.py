@@ -1,25 +1,91 @@
-from sqlalchemy import Column, Integer, String, JSON, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.sql import func
+
 from core.database import Base
-from datetime import datetime
 
 
 class CAMReport(Base):
+
     __tablename__ = "cam_reports"
 
-    id = Column(Integer, primary_key=True, index=True)
+    # ==================================================
+    # PRIMARY KEY
+    # ==================================================
 
-    customer_name = Column(String, nullable=False)
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
 
-    wc_data = Column(JSON, default=dict)
-    agri_data = Column(JSON, default=dict)
-    banking_data = Column(JSON, default=dict)
+    # ==================================================
+    # CUSTOMER INFO
+    # ==================================================
 
-    status = Column(String, default="Draft")
+    customer_name = Column(
+        String(255),
+        nullable=False,
+        index=True
+    )
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # ==================================================
+    # CREDIT ANALYSIS DATA
+    # ==================================================
+
+    wc_data = Column(
+        JSONB,
+        nullable=True,
+        default=dict
+    )
+
+    agri_data = Column(
+        JSONB,
+        nullable=True,
+        default=dict
+    )
+
+    banking_data = Column(
+        JSONB,
+        nullable=True,
+        default=dict
+    )
+
+    # ==================================================
+    # REPORT STATUS
+    # ==================================================
+
+    status = Column(
+        String(50),
+        default="Draft",
+        index=True
+    )
+
+    # Example statuses:
+    # Draft
+    # Under Review
+    # Approved
+    # Rejected
+
+    # ==================================================
+    # METADATA
+    # ==================================================
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
 
     updated_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        DateTime(timezone=True),
+        onupdate=func.now()
+    )
+
+    # ==================================================
+    # SOFT DELETE SUPPORT
+    # ==================================================
+
+    is_deleted = Column(
+        Boolean,
+        default=False
     )
