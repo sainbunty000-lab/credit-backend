@@ -2,6 +2,10 @@ from utils.safe_math import safe_divide, safe_subtract, default_zero
 import math
 
 
+# ======================================================
+# AGRICULTURE LOAN ELIGIBILITY ENGINE
+# ======================================================
+
 def calculate_agri_logic(
     doc_inc,
     tax,
@@ -11,29 +15,38 @@ def calculate_agri_logic(
     interest_rate=12
 ):
 
-    # =====================================
+    # ======================================================
     # INPUT NORMALIZATION
-    # =====================================
+    # ======================================================
 
     documented_income = default_zero(doc_inc)
     tax_paid = default_zero(tax)
     undocumented_monthly = default_zero(undoc_m)
     existing_emi_monthly = default_zero(emi_m)
 
-    tenure_years = default_zero(tenure_years)
-    interest_rate = default_zero(interest_rate)
+    tenure_years = max(1, default_zero(tenure_years))
+    interest_rate = max(0, default_zero(interest_rate))
 
-    # =====================================
+    # ======================================================
+    # POLICY CONSTANTS
+    # ======================================================
+
+    DOCUMENTED_WEIGHT = 0.70
+    UNDOCUMENTED_WEIGHT = 0.42
+    MAX_FOIR = 60
+    POLICY_DIVISOR = 0.14
+
+    # ======================================================
     # POLICY ADJUSTMENTS
-    # =====================================
+    # ======================================================
 
     net_documented_income = safe_subtract(documented_income, tax_paid)
 
-    adjusted_documented_income = 0.70 * net_documented_income
+    adjusted_documented_income = DOCUMENTED_WEIGHT * net_documented_income
 
     annual_undocumented_income = undocumented_monthly * 12
 
-    adjusted_undocumented_income = 0.42 * annual_undocumented_income
+    adjusted_undocumented_income = UNDOCUMENTED_WEIGHT * annual_undocumented_income
 
     total_adjusted_income = (
         adjusted_documented_income + adjusted_undocumented_income
@@ -46,9 +59,9 @@ def calculate_agri_logic(
         annual_existing_emi
     )
 
-    # =====================================
+    # ======================================================
     # FOIR CALCULATION
-    # =====================================
+    # ======================================================
 
     monthly_income = safe_divide(total_adjusted_income, 12)
 
@@ -57,19 +70,17 @@ def calculate_agri_logic(
         monthly_income
     ) * 100
 
-    max_foir_allowed = 60
-
     max_new_emi_allowed = (
-        (monthly_income * max_foir_allowed / 100)
+        (monthly_income * MAX_FOIR / 100)
         - existing_emi_monthly
     )
 
     if max_new_emi_allowed < 0:
         max_new_emi_allowed = 0
 
-    # =====================================
+    # ======================================================
     # LOAN ELIGIBILITY MODEL 1 (EMI MODEL)
-    # =====================================
+    # ======================================================
 
     r = interest_rate / 100 / 12
     n = tenure_years * 12
@@ -86,30 +97,30 @@ def calculate_agri_logic(
 
         eligible_loan_emi_model = max_new_emi_allowed * n
 
-    # =====================================
+    # ======================================================
     # LOAN ELIGIBILITY MODEL 2 (POLICY MODEL)
-    # =====================================
+    # ======================================================
 
     if disposable_income > 0:
 
-        eligible_loan_policy_model = disposable_income / 0.14
+        eligible_loan_policy_model = disposable_income / POLICY_DIVISOR
 
     else:
 
         eligible_loan_policy_model = 0
 
-    # =====================================
+    # ======================================================
     # FINAL CONSERVATIVE ELIGIBILITY
-    # =====================================
+    # ======================================================
 
     final_eligible_loan = min(
         eligible_loan_emi_model,
         eligible_loan_policy_model
     )
 
-    # =====================================
+    # ======================================================
     # REJECTION CONDITIONS
-    # =====================================
+    # ======================================================
 
     status = "Eligible"
     rejection_reason = None
@@ -119,14 +130,14 @@ def calculate_agri_logic(
         status = "Rejected"
         rejection_reason = "Negative disposable income"
 
-    elif foir_percent > max_foir_allowed:
+    elif foir_percent > MAX_FOIR:
 
         status = "Rejected"
         rejection_reason = "FOIR exceeds policy limit"
 
-    # =====================================
+    # ======================================================
     # RISK SCORING
-    # =====================================
+    # ======================================================
 
     score = 100
 
@@ -144,25 +155,22 @@ def calculate_agri_logic(
 
     agri_score = max(0, min(score, 100))
 
-    # =====================================
+    # ======================================================
     # RISK GRADE
-    # =====================================
+    # ======================================================
 
     if agri_score >= 80:
         risk_grade = "A"
-
     elif agri_score >= 65:
         risk_grade = "B"
-
     elif agri_score >= 50:
         risk_grade = "C"
-
     else:
         risk_grade = "D"
 
-    # =====================================
+    # ======================================================
     # CHART DATA (FOR FRONTEND)
-    # =====================================
+    # ======================================================
 
     chart_data = {
 
@@ -184,14 +192,14 @@ def calculate_agri_logic(
             },
             {
                 "name": "Policy Limit",
-                "value": max_foir_allowed
+                "value": MAX_FOIR
             }
         ]
     }
 
-    # =====================================
-    # CLEAN FUNCTION
-    # =====================================
+    # ======================================================
+    # SAFE CLEAN FUNCTION
+    # ======================================================
 
     def clean(value):
 
@@ -202,9 +210,9 @@ def calculate_agri_logic(
 
         return round(value, 2)
 
-    # =====================================
+    # ======================================================
     # FINAL RESPONSE
-    # =====================================
+    # ======================================================
 
     return {
 
