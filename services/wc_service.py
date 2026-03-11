@@ -5,10 +5,11 @@ import math
 def calculate_wc_logic(data):
 
     # =====================================
-    # NORMALIZE INPUT STRUCTURE
+    # HANDLE BOTH INPUT TYPES
+    # (parser structure OR manual JSON)
     # =====================================
 
-    if "inputs" in data:
+    if isinstance(data, dict) and "inputs" in data:
         inputs = data.get("inputs", {})
         calc = data.get("calculations", {})
     else:
@@ -16,17 +17,21 @@ def calculate_wc_logic(data):
         calc = {}
 
     # =====================================
-    # EXTRACT INPUTS (FIXED KEYS)
+    # NORMALIZE FIELD NAMES
     # =====================================
 
     inventory = default_zero(inputs.get("inventory"))
 
     receivables = default_zero(
-        inputs.get("receivables") or inputs.get("sundry_debtors")
+        inputs.get("receivables")
+        or inputs.get("sundry_debtors")
+        or inputs.get("trade_receivables")
     )
 
     payables = default_zero(
-        inputs.get("payables") or inputs.get("current_liabilities")
+        inputs.get("payables")
+        or inputs.get("current_liabilities")
+        or inputs.get("trade_payables")
     )
 
     other_ca = default_zero(inputs.get("other_current_assets"))
@@ -35,16 +40,19 @@ def calculate_wc_logic(data):
     cash_bank = default_zero(inputs.get("cash_bank"))
 
     sales = default_zero(
-        inputs.get("annual_sales") or inputs.get("sales")
+        inputs.get("annual_sales")
+        or inputs.get("sales")
+        or inputs.get("revenue")
     )
 
     cogs = default_zero(
-        inputs.get("cogs") or inputs.get("cost_of_sales")
+        inputs.get("cogs")
+        or inputs.get("cost_of_sales")
+        or inputs.get("cost_of_materials_consumed")
     )
 
     bank_credit = default_zero(inputs.get("bank_credit"))
 
-    # Financial metrics
     networth = default_zero(calc.get("networth"))
     total_debt = default_zero(calc.get("total_debt"))
 
@@ -63,11 +71,8 @@ def calculate_wc_logic(data):
     # =====================================
 
     nwc = ca - cl
-
     current_ratio = safe_divide(ca, cl)
-
     quick_ratio = safe_divide((ca - inventory), cl)
-
     wc_turnover = safe_divide(sales, nwc)
 
     # =====================================
@@ -92,20 +97,14 @@ def calculate_wc_logic(data):
     drawing_power = max(0, drawing_power)
 
     # =====================================
-    # MPBF (TANDON)
+    # MPBF (Tandon)
     # =====================================
 
-    stock = inventory
-    debtors = receivables
-
-    gca = stock + debtors + other_ca
-
+    gca = inventory + receivables + other_ca
     total_cl = payables + other_cl
 
     wcg = gca - total_cl
-
     margin = gca * 0.25
-
     mpbf = wcg - margin
 
     # =====================================
@@ -120,24 +119,7 @@ def calculate_wc_logic(data):
         recommended_limit = max(mpbf, turnover_limit)
 
     # =====================================
-    # CHARTS
-    # =====================================
-
-    gap_chart = [
-        {"name": "GCA", "value": gca},
-        {"name": "CL", "value": total_cl},
-        {"name": "WCG", "value": wcg},
-        {"name": "MPBF", "value": mpbf},
-    ]
-
-    composition_chart = [
-        {"name": "Stock", "value": stock},
-        {"name": "Debtors", "value": debtors},
-        {"name": "Other CA", "value": other_ca},
-    ]
-
-    # =====================================
-    # RISK SCORE
+    # RISK SCORING
     # =====================================
 
     risk_score = 0
@@ -159,17 +141,14 @@ def calculate_wc_logic(data):
         risk_score += 20
 
     risk_grade = (
-        "A"
-        if risk_score >= 80
-        else "B"
-        if risk_score >= 60
-        else "C"
-        if risk_score >= 40
-        else "D"
+        "A" if risk_score >= 80 else
+        "B" if risk_score >= 60 else
+        "C" if risk_score >= 40 else
+        "D"
     )
 
     # =====================================
-    # CLEAN
+    # CLEAN FUNCTION
     # =====================================
 
     def clean(value):
@@ -180,7 +159,7 @@ def calculate_wc_logic(data):
         return round(value, 2)
 
     # =====================================
-    # RESULT
+    # FINAL RESULT
     # =====================================
 
     return {
@@ -191,7 +170,7 @@ def calculate_wc_logic(data):
             "wc_turnover": clean(wc_turnover),
             "operating_cycle": clean(operating_cycle),
             "gap_days": clean(gap_days),
-            "drawing_power": clean(drawing_power),
+            "drawing_power": clean(drawing_power)
         },
         "mpbf_analysis": {
             "gca": clean(gca),
@@ -200,19 +179,28 @@ def calculate_wc_logic(data):
             "margin": clean(margin),
             "mpbf": clean(mpbf),
             "turnover_limit": clean(turnover_limit),
-            "recommended_limit": clean(recommended_limit),
+            "recommended_limit": clean(recommended_limit)
         },
         "capital_structure": {
             "networth": clean(networth),
-            "total_debt": clean(total_debt),
+            "total_debt": clean(total_debt)
         },
         "charts": {
-            "gap_chart": gap_chart,
-            "composition_chart": composition_chart,
+            "gap_chart": [
+                {"name": "GCA", "value": gca},
+                {"name": "CL", "value": total_cl},
+                {"name": "WCG", "value": wcg},
+                {"name": "MPBF", "value": mpbf}
+            ],
+            "composition_chart": [
+                {"name": "Stock", "value": inventory},
+                {"name": "Debtors", "value": receivables},
+                {"name": "Other CA", "value": other_ca}
+            ]
         },
         "risk": {
             "risk_score": risk_score,
-            "risk_grade": risk_grade,
+            "risk_grade": risk_grade
         },
-        "status": "Eligible" if nwc > 0 else "Not Eligible",
+        "status": "Eligible" if nwc > 0 else "Not Eligible"
     }
