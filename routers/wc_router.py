@@ -11,37 +11,26 @@ async def wc_upload_dual(
     profit_loss: UploadFile = File(...)
 ):
 
-    # ===============================
-    # READ FILES
-    # ===============================
-
     bs_bytes = await balance_sheet.read()
     pl_bytes = await profit_loss.read()
 
-    # ===============================
-    # PARSE FILES
-    # ===============================
-
     bs_data = parse_financial_file(bs_bytes, balance_sheet.filename)
     pl_data = parse_financial_file(pl_bytes, profit_loss.filename)
-
-    # ===============================
-    # MERGE INPUT DATA
-    # ===============================
 
     merged_inputs = {
         **bs_data.get("inputs", {}),
         **pl_data.get("inputs", {})
     }
 
-    merged_data = {
-        "inputs": merged_inputs,
-        "calculations": {}
+    merged_calc = {
+        **bs_data.get("calculations", {}),
+        **pl_data.get("calculations", {})
     }
 
-    # ===============================
-    # RUN WC CALCULATION
-    # ===============================
+    merged_data = {
+        "inputs": merged_inputs,
+        "calculations": merged_calc
+    }
 
     result = calculate_wc_logic(merged_data)
 
@@ -51,6 +40,12 @@ async def wc_upload_dual(
 @wc_router.post("/manual-calc")
 async def wc_manual_calc(data: dict):
 
-    result = calculate_wc_logic(data)
+    # convert manual JSON → parser structure
+    payload = {
+        "inputs": data,
+        "calculations": {}
+    }
+
+    result = calculate_wc_logic(payload)
 
     return result
