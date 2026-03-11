@@ -1,3 +1,6 @@
 tesseract-ocr
+tesseract-ocr-eng
+tesseract-ocr-osd
 poppler-utils
 ghostscript
+libtesseract-dev
