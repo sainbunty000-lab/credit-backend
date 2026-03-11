@@ -1,28 +1,116 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class WCManualInput(BaseModel):
 
-    current_assets: float = 0
-    current_liabilities: float = 0
+    # ---------------------------------------
+    # CURRENT ASSETS / LIABILITIES
+    # ---------------------------------------
 
-    inventory: float = 0
-    receivables: float = 0
-    payables: float = 0
+    current_assets: float = Field(
+        default=0,
+        ge=0,
+        description="Total Current Assets"
+    )
 
-    annual_sales: float = 0
-    cogs: float = 0
+    current_liabilities: float = Field(
+        default=0,
+        ge=0,
+        description="Total Current Liabilities"
+    )
 
-    bank_credit: float = 0
+    inventory: float = Field(
+        default=0,
+        ge=0,
+        description="Stock / Inventory value"
+    )
 
-    other_current_assets: float = 0
-    other_current_liabilities: float = 0
+    receivables: float = Field(
+        default=0,
+        ge=0,
+        description="Trade receivables / Sundry debtors"
+    )
 
-    cash_bank: float = 0
+    payables: float = Field(
+        default=0,
+        ge=0,
+        description="Trade creditors / Payables"
+    )
 
-    equity_share_capital: float = 0
-    reserves: float = 0
+    other_current_assets: float = Field(
+        default=0,
+        ge=0,
+        description="Other current assets"
+    )
 
-    short_term_debt: float = 0
-    long_term_debt: float = 0
-    unsecured_loans: float = 0
+    other_current_liabilities: float = Field(
+        default=0,
+        ge=0,
+        description="Other current liabilities"
+    )
+
+    cash_bank: float = Field(
+        default=0,
+        ge=0,
+        description="Cash and bank balance"
+    )
+
+    # ---------------------------------------
+    # SALES / OPERATIONS
+    # ---------------------------------------
+
+    annual_sales: float = Field(
+        default=0,
+        ge=0,
+        description="Annual turnover / sales"
+    )
+
+    cogs: float = Field(
+        default=0,
+        ge=0,
+        description="Cost of goods sold"
+    )
+
+    bank_credit: float = Field(
+        default=0,
+        ge=0,
+        description="Existing working capital borrowing"
+    )
+
+    # ---------------------------------------
+    # NETWORTH COMPONENTS
+    # ---------------------------------------
+
+    equity_share_capital: float = Field(
+        default=0,
+        ge=0,
+        description="Equity share capital"
+    )
+
+    reserves: float = Field(
+        default=0,
+        ge=0,
+        description="Reserves and surplus"
+    )
+
+    # ---------------------------------------
+    # DEBT STRUCTURE
+    # ---------------------------------------
+
+    short_term_debt: float = Field(
+        default=0,
+        ge=0,
+        description="Short term borrowings"
+    )
+
+    long_term_debt: float = Field(
+        default=0,
+        ge=0,
+        description="Long term borrowings"
+    )
+
+    unsecured_loans: float = Field(
+        default=0,
+        ge=0,
+        description="Unsecured loans"
+    )
