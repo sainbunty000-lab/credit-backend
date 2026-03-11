@@ -5,31 +5,46 @@ import math
 def calculate_wc_logic(data):
 
     # =====================================
-    # PARSER STRUCTURE
+    # NORMALIZE INPUT STRUCTURE
     # =====================================
 
-    inputs = data.get("inputs", {})
-    calc = data.get("calculations", {})
+    if "inputs" in data:
+        inputs = data.get("inputs", {})
+        calc = data.get("calculations", {})
+    else:
+        inputs = data
+        calc = {}
 
     # =====================================
-    # EXTRACT INPUTS
+    # EXTRACT INPUTS (FIXED KEYS)
     # =====================================
 
     inventory = default_zero(inputs.get("inventory"))
-    receivables = default_zero(inputs.get("sundry_debtors"))
-    payables = default_zero(inputs.get("current_liabilities"))
+
+    receivables = default_zero(
+        inputs.get("receivables") or inputs.get("sundry_debtors")
+    )
+
+    payables = default_zero(
+        inputs.get("payables") or inputs.get("current_liabilities")
+    )
 
     other_ca = default_zero(inputs.get("other_current_assets"))
     other_cl = default_zero(inputs.get("other_current_liabilities"))
 
     cash_bank = default_zero(inputs.get("cash_bank"))
 
-    sales = default_zero(inputs.get("sales"))
-    cogs = default_zero(inputs.get("cost_of_sales"))
+    sales = default_zero(
+        inputs.get("annual_sales") or inputs.get("sales")
+    )
+
+    cogs = default_zero(
+        inputs.get("cogs") or inputs.get("cost_of_sales")
+    )
 
     bank_credit = default_zero(inputs.get("bank_credit"))
 
-    # From financial calculations
+    # Financial metrics
     networth = default_zero(calc.get("networth"))
     total_debt = default_zero(calc.get("total_debt"))
 
@@ -60,13 +75,10 @@ def calculate_wc_logic(data):
     # =====================================
 
     inventory_days = safe_divide(inventory, cogs) * 365
-
     receivable_days = safe_divide(receivables, sales) * 365
-
     payable_days = safe_divide(payables, cogs) * 365
 
     operating_cycle = inventory_days + receivable_days
-
     gap_days = max(0, operating_cycle - payable_days)
 
     # =====================================
@@ -80,7 +92,7 @@ def calculate_wc_logic(data):
     drawing_power = max(0, drawing_power)
 
     # =====================================
-    # MPBF (TANDON METHOD)
+    # MPBF (TANDON)
     # =====================================
 
     stock = inventory
@@ -108,24 +120,24 @@ def calculate_wc_logic(data):
         recommended_limit = max(mpbf, turnover_limit)
 
     # =====================================
-    # CHART DATA
+    # CHARTS
     # =====================================
 
     gap_chart = [
         {"name": "GCA", "value": gca},
         {"name": "CL", "value": total_cl},
         {"name": "WCG", "value": wcg},
-        {"name": "MPBF", "value": mpbf}
+        {"name": "MPBF", "value": mpbf},
     ]
 
     composition_chart = [
         {"name": "Stock", "value": stock},
         {"name": "Debtors", "value": debtors},
-        {"name": "Other CA", "value": other_ca}
+        {"name": "Other CA", "value": other_ca},
     ]
 
     # =====================================
-    # RISK SCORING
+    # RISK SCORE
     # =====================================
 
     risk_score = 0
@@ -147,31 +159,31 @@ def calculate_wc_logic(data):
         risk_score += 20
 
     risk_grade = (
-        "A" if risk_score >= 80 else
-        "B" if risk_score >= 60 else
-        "C" if risk_score >= 40 else
-        "D"
+        "A"
+        if risk_score >= 80
+        else "B"
+        if risk_score >= 60
+        else "C"
+        if risk_score >= 40
+        else "D"
     )
 
     # =====================================
-    # CLEAN FUNCTION
+    # CLEAN
     # =====================================
 
     def clean(value):
-
         if isinstance(value, float) and (
             math.isnan(value) or math.isinf(value)
         ):
             return 0
-
         return round(value, 2)
 
     # =====================================
-    # FINAL RESULT
+    # RESULT
     # =====================================
 
     return {
-
         "ratios": {
             "nwc": clean(nwc),
             "current_ratio": clean(current_ratio),
@@ -179,9 +191,8 @@ def calculate_wc_logic(data):
             "wc_turnover": clean(wc_turnover),
             "operating_cycle": clean(operating_cycle),
             "gap_days": clean(gap_days),
-            "drawing_power": clean(drawing_power)
+            "drawing_power": clean(drawing_power),
         },
-
         "mpbf_analysis": {
             "gca": clean(gca),
             "cl": clean(total_cl),
@@ -189,23 +200,19 @@ def calculate_wc_logic(data):
             "margin": clean(margin),
             "mpbf": clean(mpbf),
             "turnover_limit": clean(turnover_limit),
-            "recommended_limit": clean(recommended_limit)
+            "recommended_limit": clean(recommended_limit),
         },
-
         "capital_structure": {
             "networth": clean(networth),
-            "total_debt": clean(total_debt)
+            "total_debt": clean(total_debt),
         },
-
         "charts": {
             "gap_chart": gap_chart,
-            "composition_chart": composition_chart
+            "composition_chart": composition_chart,
         },
-
         "risk": {
             "risk_score": risk_score,
-            "risk_grade": risk_grade
+            "risk_grade": risk_grade,
         },
-
-        "status": "Eligible" if nwc > 0 else "Not Eligible"
+        "status": "Eligible" if nwc > 0 else "Not Eligible",
     }
