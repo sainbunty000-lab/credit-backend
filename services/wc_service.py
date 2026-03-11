@@ -4,16 +4,15 @@ import math
 
 def calculate_wc_logic(data):
 
-    # -----------------------------------
-    # SUPPORT BOTH PARSER + MANUAL INPUT
-    # -----------------------------------
+    # =====================================================
+    # INPUT NORMALIZATION
+    # =====================================================
 
     if isinstance(data, dict):
 
         if "inputs" in data:
             inputs = data.get("inputs", {})
             calc = data.get("calculations", {})
-
         else:
             inputs = data
             calc = {}
@@ -22,9 +21,9 @@ def calculate_wc_logic(data):
         inputs = {}
         calc = {}
 
-    # -----------------------------------
-    # INPUT EXTRACTION
-    # -----------------------------------
+    # =====================================================
+    # EXTRACT FINANCIAL INPUTS
+    # =====================================================
 
     inventory = default_zero(inputs.get("inventory"))
 
@@ -54,29 +53,38 @@ def calculate_wc_logic(data):
     networth = default_zero(calc.get("networth"))
     total_debt = default_zero(calc.get("total_debt"))
 
-    # -----------------------------------
-    # CURRENT ASSETS / LIABILITIES
-    # -----------------------------------
+    # =====================================================
+    # CURRENT ASSETS / LIABILITIES RECONSTRUCTION
+    # =====================================================
 
     ca = inventory + receivables + other_ca + cash_bank
     cl = payables + other_cl
 
-    if cogs == 0 and sales > 0:
-        cogs = sales * 0.7
+    # If parser provided totals use them
+    ca = max(ca, default_zero(inputs.get("current_assets")))
+    cl = max(cl, default_zero(inputs.get("current_liabilities")))
 
-    # -----------------------------------
-    # WORKING CAPITAL
-    # -----------------------------------
+    # =====================================================
+    # AUTO COGS ESTIMATION
+    # =====================================================
+
+    if cogs == 0 and sales > 0:
+        cogs = sales * 0.70
+
+    # =====================================================
+    # WORKING CAPITAL METRICS
+    # =====================================================
 
     nwc = ca - cl
 
     current_ratio = safe_divide(ca, cl)
     quick_ratio = safe_divide((ca - inventory), cl)
+
     wc_turnover = safe_divide(sales, nwc)
 
-    # -----------------------------------
+    # =====================================================
     # OPERATING CYCLE
-    # -----------------------------------
+    # =====================================================
 
     inventory_days = safe_divide(inventory, cogs) * 365
     receivable_days = safe_divide(receivables, sales) * 365
@@ -85,9 +93,9 @@ def calculate_wc_logic(data):
     operating_cycle = inventory_days + receivable_days
     gap_days = max(0, operating_cycle - payable_days)
 
-    # -----------------------------------
-    # DRAWING POWER
-    # -----------------------------------
+    # =====================================================
+    # DRAWING POWER (BANK METHOD)
+    # =====================================================
 
     eligible_stock = inventory * 0.5
     eligible_debtors = receivables * 0.75
@@ -95,20 +103,22 @@ def calculate_wc_logic(data):
     drawing_power = eligible_stock + eligible_debtors - bank_credit
     drawing_power = max(0, drawing_power)
 
-    # -----------------------------------
-    # MPBF CALCULATION
-    # -----------------------------------
+    # =====================================================
+    # MPBF (TANDON METHOD)
+    # =====================================================
 
     gca = inventory + receivables + other_ca
     total_cl = payables + other_cl
 
     wcg = gca - total_cl
+
     margin = gca * 0.25
+
     mpbf = wcg - margin
 
-    # -----------------------------------
+    # =====================================================
     # TURNOVER METHOD
-    # -----------------------------------
+    # =====================================================
 
     turnover_limit = sales * 0.20 if sales > 0 else 0
 
@@ -117,26 +127,26 @@ def calculate_wc_logic(data):
     else:
         recommended_limit = max(mpbf, turnover_limit)
 
-    # -----------------------------------
+    # =====================================================
     # CHART DATA
-    # -----------------------------------
+    # =====================================================
 
     gap_chart = [
-        {"name": "GCA", "value": gca},
-        {"name": "CL", "value": total_cl},
-        {"name": "WCG", "value": wcg},
+        {"name": "Gross Current Assets", "value": gca},
+        {"name": "Current Liabilities", "value": total_cl},
+        {"name": "Working Capital Gap", "value": wcg},
         {"name": "MPBF", "value": mpbf}
     ]
 
     composition_chart = [
-        {"name": "Stock", "value": inventory},
-        {"name": "Debtors", "value": receivables},
+        {"name": "Inventory", "value": inventory},
+        {"name": "Receivables", "value": receivables},
         {"name": "Other CA", "value": other_ca}
     ]
 
-    # -----------------------------------
-    # RISK SCORE
-    # -----------------------------------
+    # =====================================================
+    # RISK SCORING ENGINE
+    # =====================================================
 
     risk_score = 0
 
@@ -163,20 +173,22 @@ def calculate_wc_logic(data):
         "D"
     )
 
-    # -----------------------------------
-    # CLEAN FUNCTION
-    # -----------------------------------
+    # =====================================================
+    # SAFE CLEAN FUNCTION
+    # =====================================================
 
     def clean(value):
+
         if isinstance(value, float) and (
             math.isnan(value) or math.isinf(value)
         ):
             return 0
+
         return round(value, 2)
 
-    # -----------------------------------
+    # =====================================================
     # FINAL RESPONSE
-    # -----------------------------------
+    # =====================================================
 
     return {
 
