@@ -1,272 +1,318 @@
-import pdfplumber
-import re
-from io import BytesIO
+from collections import defaultdict
 from datetime import datetime
+import statistics
 
 
-# =====================================================
-# DATE PATTERNS
-# =====================================================
+# =========================================================
+# SAFE FLOAT
+# =========================================================
 
-DATE_PATTERNS = [
-    r"\d{2}/\d{2}/\d{2}",
-    r"\d{2}/\d{2}/\d{4}",
-    r"\d{2}-\d{2}-\d{2}",
-    r"\d{2}-\d{2}-\d{4}"
-]
-
-DATE_REGEX = re.compile("|".join(DATE_PATTERNS))
-
-
-# =====================================================
-# MAIN ENTRY
-# =====================================================
-
-def parse_banking_file(file_bytes):
-
-    transactions = []
+def safe_float(v):
 
     try:
-
-        with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-
-            for page in pdf.pages:
-
-                # --------------------------------
-                # TABLE PARSING
-                # --------------------------------
-
-                tables = page.extract_tables()
-
-                if tables:
-                    for table in tables:
-                        for row in table:
-
-                            txn = parse_table_row(row)
-
-                            if txn:
-                                transactions.append(txn)
-
-                # --------------------------------
-                # TEXT PARSING FALLBACK
-                # --------------------------------
-
-                text = page.extract_text()
-
-                if not text:
-                    continue
-
-                lines = text.split("\n")
-
-                for line in lines:
-
-                    txn = parse_text_line(line, transactions)
-
-                    if txn:
-                        transactions.append(txn)
-
-    except Exception:
-        return []
-
-    return transactions
+        return float(v)
+    except:
+        return 0.0
 
 
-# =====================================================
-# TABLE PARSER
-# =====================================================
+# =========================================================
+# MAIN BANKING ANALYZER
+# =========================================================
 
-def parse_table_row(row):
+def analyze_banking(transactions):
 
-    if not row or len(row) < 3:
-        return None
+    if not transactions:
+        return empty_response()
 
-    try:
+    total_credit = 0
+    total_debit = 0
 
-        # Find date in row
-        date = None
+    credit_txn = 0
+    debit_txn = 0
 
-        for cell in row:
-            if is_date(cell):
-                date = cell
-                break
+    salary_income = 0
+    emi_total = 0
+    upi_spend = 0
+    cash_deposit = 0
 
-        if not date:
-            return None
+    bounce = 0
+    negative_balance = 0
 
-        # Extract numbers
-        numbers = [normalize_number(x) for x in row]
+    monthly_credit = defaultdict(float)
+    monthly_debit = defaultdict(float)
+    balances = []
 
-        numbers = [n for n in numbers if n > 0]
+    dates = []
 
-        if len(numbers) < 2:
-            return None
+    # =====================================================
+    # LOOP TRANSACTIONS
+    # =====================================================
 
-        amount = numbers[-2]
-        balance = numbers[-1]
+    for txn in transactions:
 
-        debit = 0
-        credit = 0
+        desc = str(txn.get("description", "")).lower()
 
-        # Detect DR/CR
-        row_text = " ".join([str(x).lower() for x in row])
+        credit = safe_float(txn.get("credit"))
+        debit = safe_float(txn.get("debit"))
+        balance = safe_float(txn.get("balance"))
 
-        if "dr" in row_text:
-            debit = amount
+        date_value = txn.get("date")
 
-        elif "cr" in row_text:
-            credit = amount
+        month = extract_month(date_value)
+
+        if month:
+            monthly_credit[month] += credit
+            monthly_debit[month] += debit
+
+        if date_value:
+            dates.append(date_value)
+
+        balances.append(balance)
+
+        total_credit += credit
+        total_debit += debit
+
+        if credit > 0:
+            credit_txn += 1
+
+        if debit > 0:
+            debit_txn += 1
+
+        # --------------------------------------------------
+        # INCOME CLASSIFICATION
+        # --------------------------------------------------
+
+        if "salary" in desc:
+            salary_income += credit
+
+        if "cash deposit" in desc:
+            cash_deposit += credit
+
+        # --------------------------------------------------
+        # EXPENSE CLASSIFICATION
+        # --------------------------------------------------
+
+        if "emi" in desc or "loan" in desc:
+            emi_total += debit
+
+        if "upi" in desc or "gpay" in desc or "phonepe" in desc:
+            upi_spend += debit
+
+        # --------------------------------------------------
+        # BEHAVIOR FLAGS
+        # --------------------------------------------------
+
+        if "return" in desc or "bounce" in desc:
+            bounce += 1
+
+        if balance < 0:
+            negative_balance += 1
+
+    # =====================================================
+    # SUMMARY METRICS
+    # =====================================================
+
+    net = total_credit - total_debit
+
+    expense_ratio = safe_divide(total_debit, total_credit) * 100
+
+    salary_dependency = safe_divide(salary_income, total_credit) * 100
+
+    avg_balance = statistics.mean(balances) if balances else 0
+
+    median_balance = statistics.median(balances) if balances else 0
+
+    # =====================================================
+    # CASH FLOW STABILITY
+    # =====================================================
+
+    monthly_net = []
+
+    for m in sorted(set(monthly_credit) | set(monthly_debit)):
+
+        net_m = monthly_credit[m] - monthly_debit[m]
+
+        monthly_net.append(net_m)
+
+    cashflow_stability = 0
+
+    if len(monthly_net) > 1:
+
+        variance = statistics.pvariance(monthly_net)
+
+        if variance < 100000:
+            cashflow_stability = 90
+
+        elif variance < 500000:
+            cashflow_stability = 70
 
         else:
-            # fallback unknown
-            credit = amount
+            cashflow_stability = 50
 
-        description = extract_description(row)
+    # =====================================================
+    # RISK SCORING
+    # =====================================================
 
-        return {
-            "date": date,
-            "description": description,
-            "debit": debit,
-            "credit": credit,
-            "balance": balance
-        }
+    score = 100
 
-    except:
-        return None
+    if net < 0:
+        score -= 25
 
+    if expense_ratio > 90:
+        score -= 15
 
-# =====================================================
-# TEXT LINE PARSER
-# =====================================================
+    score -= bounce * 10
+    score -= negative_balance * 10
 
-def parse_text_line(line, transactions):
+    if emi_total > salary_income * 0.5:
+        score -= 15
 
-    if not line:
-        return None
+    score = max(0, min(score, 100))
 
-    date_match = DATE_REGEX.search(line)
+    # =====================================================
+    # RISK GRADE
+    # =====================================================
 
-    if not date_match:
-        return None
+    if score >= 80:
+        grade = "A"
+        status = "Strong"
 
-    date = date_match.group()
+    elif score >= 65:
+        grade = "B"
+        status = "Good"
 
-    numbers = re.findall(r"-?\d+(?:,\d{3})*(?:\.\d+)?", line)
-
-    if len(numbers) < 2:
-        return None
-
-    balance = normalize_number(numbers[-1])
-    amount = normalize_number(numbers[-2])
-
-    debit = 0
-    credit = 0
-
-    # --------------------------------
-    # DR / CR detection
-    # --------------------------------
-
-    if "dr" in line.lower():
-        debit = amount
-
-    elif "cr" in line.lower():
-        credit = amount
+    elif score >= 50:
+        grade = "C"
+        status = "Moderate"
 
     else:
+        grade = "D"
+        status = "Weak"
 
-        # --------------------------------
-        # Balance movement fallback
-        # --------------------------------
-
-        if transactions:
-
-            prev_balance = transactions[-1]["balance"]
-
-            if balance > prev_balance:
-                credit = amount
-            else:
-                debit = amount
-
-        else:
-
-            credit = amount
-
-    narration = line.replace(date, "")
-    narration = clean_narration(narration)
+    # =====================================================
+    # FINAL RESPONSE
+    # =====================================================
 
     return {
-        "date": date,
-        "description": narration,
-        "debit": debit,
-        "credit": credit,
-        "balance": balance
+
+        "statement_period": {
+            "from": min(dates) if dates else None,
+            "to": max(dates) if dates else None
+        },
+
+        "statement_summary": {
+
+            "total_credit": round(total_credit, 2),
+            "total_debit": round(total_debit, 2),
+
+            "net_surplus": round(net, 2),
+
+            "credit_transactions": credit_txn,
+            "debit_transactions": debit_txn,
+
+            "average_balance": round(avg_balance, 2),
+            "median_balance": round(median_balance, 2)
+        },
+
+        "income_analysis": {
+
+            "salary_income": round(salary_income, 2),
+
+            "salary_dependency_percent": round(salary_dependency, 2),
+
+            "cash_deposit": round(cash_deposit, 2)
+        },
+
+        "expense_analysis": {
+
+            "emi_total": round(emi_total, 2),
+
+            "upi_spends": round(upi_spend, 2),
+
+            "expense_ratio_percent": round(expense_ratio, 2)
+        },
+
+        "behavior_analysis": {
+
+            "bounce_count": bounce,
+
+            "negative_balance_count": negative_balance,
+
+            "cashflow_stability_score": cashflow_stability
+        },
+
+        "risk_summary": {
+
+            "hygiene_score": score,
+
+            "risk_grade": grade,
+
+            "status": status
+        },
+
+        "chart_data": {
+
+            "monthly_trend": [
+
+                {
+                    "month": m,
+                    "credit": round(monthly_credit[m], 2),
+                    "debit": round(monthly_debit[m], 2)
+                }
+
+                for m in sorted(set(monthly_credit) | set(monthly_debit))
+            ]
+        }
     }
 
 
-# =====================================================
-# DESCRIPTION EXTRACTION
-# =====================================================
+# =========================================================
+# DATE PARSER
+# =========================================================
 
-def extract_description(row):
+def extract_month(date):
 
     try:
 
-        text = " ".join([str(x) for x in row if x])
+        d = datetime.strptime(date, "%d/%m/%y")
 
-        text = clean_narration(text)
-
-        return text
+        return d.strftime("%Y-%m")
 
     except:
-        return ""
+
+        try:
+            d = datetime.strptime(date, "%d/%m/%Y")
+
+            return d.strftime("%Y-%m")
+
+        except:
+            return None
 
 
-# =====================================================
-# DATE DETECTION
-# =====================================================
+# =========================================================
+# SAFE DIVIDE
+# =========================================================
 
-def is_date(value):
-
-    if not value:
-        return False
-
-    value = str(value)
-
-    return bool(DATE_REGEX.match(value))
-
-
-# =====================================================
-# NUMBER NORMALIZATION
-# =====================================================
-
-def normalize_number(value):
+def safe_divide(a, b):
 
     try:
-
-        if value is None:
-            return 0
-
-        value = str(value)
-
-        value = value.replace(",", "")
-        value = value.replace("₹", "")
-        value = value.replace("Dr", "")
-        value = value.replace("Cr", "")
-        value = value.strip()
-
-        return float(value)
-
+        return a / b if b else 0
     except:
         return 0
 
 
-# =====================================================
-# NARRATION CLEANER
-# =====================================================
+# =========================================================
+# EMPTY RESPONSE
+# =========================================================
 
-def clean_narration(text):
+def empty_response():
 
-    text = re.sub(r"\s+", " ", str(text))
+    return {
 
-    text = text.replace("\n", " ")
-
-    return text.strip()
+        "statement_summary": {},
+        "income_analysis": {},
+        "expense_analysis": {},
+        "behavior_analysis": {},
+        "risk_summary": {},
+        "chart_data": {}
+    }
