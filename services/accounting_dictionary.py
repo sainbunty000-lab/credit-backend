@@ -15,7 +15,8 @@ ACCOUNTING_KEYWORDS = {
 "current asset",
 "tca",
 "total ca",
-"current asset total"
+"current asset total",
+"total of current assets"
 ],
 
 "current_liabilities":[
@@ -24,8 +25,13 @@ ACCOUNTING_KEYWORDS = {
 "current liability",
 "tcl",
 "total cl",
-"current liability total"
+"current liability total",
+"total of current liabilities"
 ],
+
+# ----------------------------------------------------------
+# INVENTORY
+# ----------------------------------------------------------
 
 "inventory":[
 "inventory",
@@ -40,8 +46,14 @@ ACCOUNTING_KEYWORDS = {
 "raw material stock",
 "work in progress",
 "wip",
-"goods inventory"
+"goods inventory",
+"inventory of goods",
+"inventory balance"
 ],
+
+# ----------------------------------------------------------
+# RECEIVABLES
+# ----------------------------------------------------------
 
 "receivables":[
 "trade receivables",
@@ -51,8 +63,14 @@ ACCOUNTING_KEYWORDS = {
 "debtors",
 "receivables",
 "book debts",
-"trade debtors"
+"trade debtors",
+"receivable from customers",
+"amount receivable"
 ],
+
+# ----------------------------------------------------------
+# PAYABLES
+# ----------------------------------------------------------
 
 "payables":[
 "trade payables",
@@ -61,18 +79,32 @@ ACCOUNTING_KEYWORDS = {
 "account payable",
 "creditors",
 "payables",
-"trade creditors"
+"trade creditors",
+"amount payable",
+"payable to suppliers"
 ],
+
+# ----------------------------------------------------------
+# CASH & BANK
+# ----------------------------------------------------------
 
 "cash_bank":[
 "cash and bank",
+"cash & bank",
 "cash and bank balance",
 "cash and cash equivalents",
 "cash balance",
 "bank balance",
 "cash in hand",
-"cash at bank"
+"cash at bank",
+"bank balances",
+"cash balances",
+"cash and bank balances"
 ],
+
+# ----------------------------------------------------------
+# BANK CREDIT
+# ----------------------------------------------------------
 
 "bank_credit":[
 "bank borrowings",
@@ -84,18 +116,32 @@ ACCOUNTING_KEYWORDS = {
 "secured loan",
 "short term borrowings",
 "cc account",
-"od account"
+"od account",
+"bank loan",
+"loan from bank",
+"cash credit facility"
 ],
+
+# ----------------------------------------------------------
+# OTHER CURRENT ASSETS
+# ----------------------------------------------------------
 
 "other_current_assets":[
 "other current assets",
 "short term loans and advances",
 "loans and advances",
+"loans & advances",
 "advances",
 "other loans and advances",
 "advance to suppliers",
-"advance recoverable"
+"advance recoverable",
+"prepaid expenses",
+"advance payments"
 ],
+
+# ----------------------------------------------------------
+# OTHER CURRENT LIABILITIES
+# ----------------------------------------------------------
 
 "other_current_liabilities":[
 "other current liabilities",
@@ -103,13 +149,21 @@ ACCOUNTING_KEYWORDS = {
 "provisions",
 "other liabilities",
 "statutory dues",
-"outstanding expenses"
+"outstanding expenses",
+"accrued expenses",
+"provision for tax",
+"provision for taxation",
+"provision for expenses"
 ],
 
 
 # ==========================================================
 # PROFIT & LOSS
 # ==========================================================
+
+# ----------------------------------------------------------
+# SALES
+# ----------------------------------------------------------
 
 "annual_sales":[
 "sales",
@@ -123,16 +177,27 @@ ACCOUNTING_KEYWORDS = {
 "sale of products",
 "operating revenue",
 "total revenue",
-"income from operations"
+"income from operations",
+"revenue from sale",
+"sales income"
 ],
+
+# ----------------------------------------------------------
+# OTHER INCOME
+# ----------------------------------------------------------
 
 "other_income":[
 "other income",
 "non operating income",
 "misc income",
 "miscellaneous income",
-"other revenue"
+"other revenue",
+"non operational income"
 ],
+
+# ----------------------------------------------------------
+# COST OF GOODS SOLD
+# ----------------------------------------------------------
 
 "cogs":[
 "cost of goods sold",
@@ -142,8 +207,14 @@ ACCOUNTING_KEYWORDS = {
 "purchase of stock in trade",
 "cost of goods",
 "material consumed",
-"purchase cost"
+"purchase cost",
+"cost of material",
+"purchase of goods"
 ],
+
+# ----------------------------------------------------------
+# OPERATING EXPENSES
+# ----------------------------------------------------------
 
 "operating_expenses":[
 "operating expenses",
@@ -151,39 +222,71 @@ ACCOUNTING_KEYWORDS = {
 "selling expenses",
 "other expenses",
 "employee benefit expenses",
-"staff cost"
+"staff cost",
+"salaries and wages",
+"office expenses",
+"general expenses"
 ],
+
+# ----------------------------------------------------------
+# GROSS PROFIT
+# ----------------------------------------------------------
 
 "gross_profit":[
 "gross profit",
-"gp"
+"gp",
+"gross income"
 ],
+
+# ----------------------------------------------------------
+# EBITDA
+# ----------------------------------------------------------
 
 "ebitda":[
 "ebitda",
 "earnings before interest tax depreciation amortization",
-"operating profit"
+"operating profit",
+"earnings before interest tax depreciation"
 ],
+
+# ----------------------------------------------------------
+# DEPRECIATION
+# ----------------------------------------------------------
 
 "depreciation":[
 "depreciation",
 "depreciation expense",
-"depreciation and amortization"
+"depreciation and amortization",
+"amortization"
 ],
+
+# ----------------------------------------------------------
+# INTEREST
+# ----------------------------------------------------------
 
 "interest_expense":[
 "interest",
 "finance cost",
 "finance charges",
 "interest expense",
-"interest on loans"
+"interest on loans",
+"bank interest"
 ],
+
+# ----------------------------------------------------------
+# PBT
+# ----------------------------------------------------------
 
 "profit_before_tax":[
 "profit before tax",
 "pbt",
-"profit before taxation"
+"profit before taxation",
+"profit before income tax"
 ],
+
+# ----------------------------------------------------------
+# PAT
+# ----------------------------------------------------------
 
 "net_profit":[
 "net profit",
@@ -191,7 +294,8 @@ ACCOUNTING_KEYWORDS = {
 "pat",
 "net income",
 "profit for the year",
-"profit after taxation"
+"profit after taxation",
+"profit after income tax"
 ],
 
 
@@ -203,21 +307,26 @@ ACCOUNTING_KEYWORDS = {
 "salary",
 "salary credit",
 "salary deposit",
-"salary transfer"
+"salary transfer",
+"salary payment"
 ],
 
 "upi_spend":[
 "upi",
 "upi payment",
 "upi transfer",
-"upi txn"
+"upi txn",
+"gpay",
+"phonepe",
+"paytm"
 ],
 
 "loan_emi":[
 "emi",
 "loan installment",
 "installment",
-"loan emi"
+"loan emi",
+"loan repayment"
 ]
 
 }
@@ -225,7 +334,6 @@ ACCOUNTING_KEYWORDS = {
 
 # ==========================================================
 # UNIT SCALE DETECTION
-# Detect statements mentioning values in thousand/lakh/etc
 # ==========================================================
 
 UNIT_SCALE_KEYWORDS = {
@@ -237,7 +345,8 @@ UNIT_SCALE_KEYWORDS = {
 "amounts in thousands",
 "figures in thousand",
 "figures in thousands",
-"amount in thousand"
+"amount in thousand",
+"amount in thousands"
 ],
 
 "lakh":[
@@ -245,20 +354,23 @@ UNIT_SCALE_KEYWORDS = {
 "in lakhs",
 "amounts in lakhs",
 "figures in lakhs",
-"amount in lakh"
+"amount in lakh",
+"amount in lakhs"
 ],
 
 "million":[
 "in million",
 "in millions",
-"amounts in million"
+"amounts in million",
+"figures in million"
 ],
 
 "crore":[
 "in crore",
 "in crores",
 "amounts in crores",
-"figures in crores"
+"figures in crores",
+"amount in crore"
 ]
 
 }
