@@ -9,7 +9,7 @@ from io import BytesIO
 from docx import Document
 from difflib import SequenceMatcher
 
-from services.accounting_dictionary import ACCOUNTING_KEYWORDS
+from services.accounting_dictionary import ACCOUNTING_KEYWORDS, UNIT_SCALE_KEYWORDS
 
 
 # ==========================================================
@@ -27,58 +27,33 @@ def parse_financial_file(file, filename):
 
         filename = filename.lower()
 
-        # -------------------------------------------
-        # CSV
-        # -------------------------------------------
-
         if filename.endswith(".csv"):
 
             df = pd.read_csv(BytesIO(file_bytes))
-
             extracted = extract_from_dataframe(df)
-
-        # -------------------------------------------
-        # EXCEL
-        # -------------------------------------------
 
         elif filename.endswith(".xlsx"):
 
             df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
-
             extracted = extract_from_dataframe(df)
 
         elif filename.endswith(".xls"):
 
             df = pd.read_excel(BytesIO(file_bytes), engine="xlrd")
-
             extracted = extract_from_dataframe(df)
-
-        # -------------------------------------------
-        # PDF
-        # -------------------------------------------
 
         elif filename.endswith(".pdf"):
 
             extracted = extract_from_pdf(file_bytes)
 
-        # -------------------------------------------
-        # DOCX
-        # -------------------------------------------
-
         elif filename.endswith(".docx"):
 
             text = extract_docx_text(file_bytes)
-
             extracted = extract_from_text(text)
 
-        # -------------------------------------------
-        # IMAGE
-        # -------------------------------------------
-
-        elif filename.endswith((".jpg",".jpeg",".png")):
+        elif filename.endswith((".jpg", ".jpeg", ".png")):
 
             text = extract_image_ocr(file_bytes)
-
             extracted = extract_from_text(text)
 
         else:
@@ -115,10 +90,6 @@ def extract_from_pdf(file_bytes):
 
         for page in pdf.pages:
 
-            # -----------------------------
-            # TABLE EXTRACTION
-            # -----------------------------
-
             tables = page.extract_tables()
 
             if tables:
@@ -129,11 +100,10 @@ def extract_from_pdf(file_bytes):
 
                     table_result = extract_from_dataframe(df)
 
-                    result.update(table_result)
+                    for k, v in table_result.items():
 
-            # -----------------------------
-            # TEXT EXTRACTION
-            # -----------------------------
+                        if k not in result:
+                            result[k] = v
 
             page_text = page.extract_text()
 
@@ -144,7 +114,10 @@ def extract_from_pdf(file_bytes):
 
         text_result = extract_from_text(text_blob)
 
-        result.update(text_result)
+        for k, v in text_result.items():
+
+            if k not in result:
+                result[k] = v
 
     return result
 
@@ -156,7 +129,6 @@ def extract_from_pdf(file_bytes):
 def fuzzy_match(keyword, text, threshold=0.82):
 
     keyword = keyword.lower()
-
     text = text.lower()
 
     ratio = SequenceMatcher(None, keyword, text).ratio()
@@ -180,6 +152,9 @@ def extract_from_dataframe(df):
 
         row_text = " ".join(str(v).lower() for v in row.values)
 
+        if "particular" in row_text:
+            continue
+
         row_text = normalize_text(row_text)
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
@@ -199,7 +174,7 @@ def extract_from_dataframe(df):
 
                         value = value * multiplier
 
-                        if abs(value) > 100:
+                        if abs(value) > 100 and value < 10**12:
                             result[key] = value
 
     return result
@@ -248,7 +223,7 @@ def extract_from_text(text):
 
                         value = value * multiplier
 
-                        if abs(value) > 100:
+                        if abs(value) > 100 and value < 10**12:
                             result[key] = value
 
     return result
@@ -261,37 +236,42 @@ def extract_from_text(text):
 def normalize_text(text):
 
     text = text.lower()
-
     text = re.sub(r"\s+", " ", text)
 
     return text.strip()
 
 
 # ==========================================================
-# UNIT DETECTION
+# UNIT DETECTION (UPDATED)
 # ==========================================================
 
 def detect_multiplier(text):
 
     text = text.lower()
 
-    if "in thousands" in text or "thousand" in text:
-        return 1000
+    for unit, keywords in UNIT_SCALE_KEYWORDS.items():
 
-    if "lakhs" in text or "lakh" in text:
-        return 100000
+        for k in keywords:
 
-    if "crores" in text or "crore" in text:
-        return 10000000
+            if k in text:
 
-    if "million" in text:
-        return 1000000
+                if unit == "thousand":
+                    return 1000
+
+                if unit == "lakh":
+                    return 100000
+
+                if unit == "million":
+                    return 1000000
+
+                if unit == "crore":
+                    return 10000000
 
     return 1
 
 
 # ==========================================================
-# NUMBER EXTRACTION
+# NUMBER EXTRACTION (FIXED)
 # ==========================================================
 
 def extract_numbers(values):
@@ -302,7 +282,7 @@ def extract_numbers(values):
 
         text = str(v)
 
-        text = text.replace("₹","")
+        text = text.replace("₹", "")
 
         matches = re.findall(r"-?\d+(?:,\d{3})*(?:\.\d+)?", text)
 
@@ -311,7 +291,14 @@ def extract_numbers(values):
             m = m.replace(",", "")
 
             try:
-                numbers.append(float(m))
+
+                val = float(m)
+
+                if 1900 <= val <= 2100:
+                    continue
+
+                numbers.append(val)
+
             except:
                 pass
 
@@ -344,7 +331,6 @@ def extract_docx_text(file_bytes):
         doc = Document(BytesIO(file_bytes))
 
         for para in doc.paragraphs:
-
             text += para.text + "\n"
 
     except:
@@ -354,7 +340,7 @@ def extract_docx_text(file_bytes):
 
 
 # ==========================================================
-# IMAGE OCR
+# IMAGE OCR (IMPROVED)
 # ==========================================================
 
 def extract_image_ocr(file_bytes):
@@ -363,7 +349,7 @@ def extract_image_ocr(file_bytes):
 
         image = Image.open(BytesIO(file_bytes))
 
-        text = pytesseract.image_to_string(image)
+        text = pytesseract.image_to_string(image, config="--psm 6")
 
         return text
 
@@ -377,31 +363,31 @@ def extract_image_ocr(file_bytes):
 
 def calculate_financial_metrics(data):
 
-    sales = data.get("annual_sales",0)
+    sales = data.get("annual_sales", 0)
 
-    other_income = data.get("other_income",0)
+    other_income = data.get("other_income", 0)
 
-    expenses = data.get("operating_expenses",0)
+    expenses = data.get("operating_expenses", 0)
 
-    interest = data.get("interest_expense",0)
+    interest = data.get("interest_expense", 0)
 
-    depreciation = data.get("depreciation",0)
+    depreciation = data.get("depreciation", 0)
 
-    tax = data.get("tax",0)
+    tax = data.get("tax", 0)
 
-    equity = data.get("equity_share_capital",0)
+    equity = data.get("equity_share_capital", 0)
 
-    reserves = data.get("reserves",0)
+    reserves = data.get("reserves", 0)
 
-    short_debt = data.get("short_term_debt",0)
+    short_debt = data.get("short_term_debt", 0)
 
-    long_debt = data.get("long_term_debt",0)
+    long_debt = data.get("long_term_debt", 0)
 
-    unsecured = data.get("unsecured_loans",0)
+    unsecured = data.get("unsecured_loans", 0)
 
-    current_assets = data.get("current_assets",0)
+    current_assets = data.get("current_assets", 0)
 
-    current_liabilities = data.get("current_liabilities",0)
+    current_liabilities = data.get("current_liabilities", 0)
 
     total_income = sales + other_income
 
