@@ -60,9 +60,11 @@ def calculate_wc_logic(data):
     ca = inventory + receivables + other_ca + cash_bank
     cl = payables + other_cl
 
-    # If parser provided totals use them
-    ca = max(ca, default_zero(inputs.get("current_assets")))
-    cl = max(cl, default_zero(inputs.get("current_liabilities")))
+    # If parser provided totals use them; prefer parser value if explicitly provided
+    parser_ca = inputs.get("current_assets")
+    parser_cl = inputs.get("current_liabilities")
+    ca = default_zero(parser_ca) if parser_ca is not None else ca
+    cl = default_zero(parser_cl) if parser_cl is not None else cl
 
     # =====================================================
     # AUTO COGS ESTIMATION

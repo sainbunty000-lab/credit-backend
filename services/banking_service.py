@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime
 import statistics
+from utils.safe_math import safe_divide
 
 
 # =========================================================
@@ -287,18 +288,6 @@ def extract_month(date):
 
         except:
             return None
-
-
-# =========================================================
-# SAFE DIVIDE
-# =========================================================
-
-def safe_divide(a, b):
-
-    try:
-        return a / b if b else 0
-    except:
-        return 0
 
 
 # =========================================================

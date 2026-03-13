@@ -42,14 +42,15 @@ class CAMCreate(BaseModel):
         description="Credit analyst name"
     )
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "customer_name": "Rahul Sharma",
                 "loan_amount": 2500000,
                 "analyst_name": "Credit Team"
             }
         }
+    }
 
 
 # ======================================================
@@ -57,6 +58,13 @@ class CAMCreate(BaseModel):
 # ======================================================
 
 class CAMUpdate(BaseModel):
+
+    customer_name: Optional[str] = Field(
+        default=None,
+        min_length=2,
+        max_length=255,
+        description="Customer full name"
+    )
 
     wc_data: Optional[Dict] = Field(
         default=None,
@@ -126,8 +134,8 @@ class CAMSubmit(BaseModel):
         description="Final decision (Approved / Rejected / Refer)"
     )
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "credit_grade": "A",
                 "remarks": "Financials strong. Limit approved.",
@@ -135,3 +143,4 @@ class CAMSubmit(BaseModel):
                 "decision": "Approved"
             }
         }
+    }

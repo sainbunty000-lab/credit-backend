@@ -143,7 +143,7 @@ def calculate_agri_logic(
     if foir_percent > 50:
         score -= 30
 
-    elif 35 <= foir_percent <= 50:
+    elif 35 <= foir_percent < 50:
         score -= 15
 
     if disposable_income < (1.5 * annual_existing_emi):

@@ -4,7 +4,8 @@ from sqlalchemy import (
     String,
     DateTime,
     Boolean,
-    Index
+    Index,
+    Text
 )
 
 from sqlalchemy.dialects.postgresql import JSONB
@@ -69,6 +70,12 @@ class CAMReport(Base):
     # DECISION METRICS (OPTIONAL BUT IMPORTANT)
     # ==================================================
 
+    loan_amount = Column(
+        Integer,
+        nullable=True,
+        default=0
+    )
+
     recommended_limit = Column(
         Integer,
         nullable=True
@@ -76,6 +83,16 @@ class CAMReport(Base):
 
     risk_grade = Column(
         String(5),
+        nullable=True
+    )
+
+    credit_grade = Column(
+        String(5),
+        nullable=True
+    )
+
+    remarks = Column(
+        Text,
         nullable=True
     )
 
@@ -125,6 +142,12 @@ class CAMReport(Base):
     created_by = Column(
         String(100),
         nullable=True
+    )
+
+    analyst_name = Column(
+        String(100),
+        nullable=True,
+        default="System"
     )
 
     # ==================================================
