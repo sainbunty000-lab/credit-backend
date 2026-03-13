@@ -10,6 +10,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from core.database import engine, Base
+from models import cam  # noqa: F401 - ensure all models are imported before create_all
+
 from routers.cam_router import router as cam_router
 from routers.wc_router import wc_router
 from routers.agriculture_router import agri_router
@@ -62,7 +65,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
 
-    allow_origins=["http://localhost:5173/"],  # Replace with frontend domain in production
+    allow_origins=["http://localhost:5173"],  # Replace with frontend domain in production
 
     allow_credentials=True,
 
@@ -167,6 +170,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.on_event("startup")
 async def startup_event():
+
+    Base.metadata.create_all(bind=engine)
 
     logger.info("Credit Intelligence Engine started successfully")
 
