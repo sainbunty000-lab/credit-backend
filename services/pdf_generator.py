@@ -59,25 +59,18 @@ def generate_cam_pdf(data, filename="cam_report.pdf"):
         bottomMargin=40,
     )
 
-    elements = []
+    elements = [Paragraph("<b>CREDIT APPRAISAL MEMO</b>", styles["Title"]), Spacer(1, 0.3 * inch), Paragraph("<b>Customer Details</b>", styles["Heading2"])]
 
     # =========================================
     # TITLE
     # =========================================
 
-    elements.append(
-        Paragraph("<b>CREDIT APPRAISAL MEMO</b>", styles["Title"])
-    )
 
-    elements.append(Spacer(1, 0.3 * inch))
 
     # =========================================
     # CUSTOMER DETAILS
     # =========================================
 
-    elements.append(
-        Paragraph("<b>Customer Details</b>", styles["Heading2"])
-    )
 
     customer_table = [
         ["Field", "Value"],
