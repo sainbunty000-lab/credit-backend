@@ -33,7 +33,7 @@ def autosave_cam_report(report_id: int, data, db: Session):
 
     report = (
         db.query(CAMReport)
-        .filter(CAMReport.id == report_id, CAMReport.is_deleted == False)
+        .filter(CAMReport.id == report_id, CAMReport.is_deleted is False)
         .first()
     )
 
@@ -74,7 +74,7 @@ def submit_cam_report(report_id: int, data, db: Session):
 
     report = (
         db.query(CAMReport)
-        .filter(CAMReport.id == report_id, CAMReport.is_deleted == False)
+        .filter(CAMReport.id == report_id, CAMReport.is_deleted is False)
         .first()
     )
 
@@ -101,7 +101,7 @@ def get_cam_report(report_id: int, db: Session):
 
     return (
         db.query(CAMReport)
-        .filter(CAMReport.id == report_id, CAMReport.is_deleted == False)
+        .filter(CAMReport.id == report_id, CAMReport.is_deleted is False)
         .first()
     )
 
@@ -112,7 +112,7 @@ def get_cam_report(report_id: int, db: Session):
 
 def get_all_cam_reports(skip: int, limit: int, search: str, db: Session):
 
-    query = db.query(CAMReport).filter(CAMReport.is_deleted == False)
+    query = db.query(CAMReport).filter(CAMReport.is_deleted is False)
 
     if search:
         query = query.filter(
@@ -140,7 +140,7 @@ def delete_cam_report(report_id: int, db: Session):
 
     report = (
         db.query(CAMReport)
-        .filter(CAMReport.id == report_id, CAMReport.is_deleted == False)
+        .filter(CAMReport.id == report_id, CAMReport.is_deleted is False)
         .first()
     )
 
@@ -162,7 +162,7 @@ def restore_cam_report(report_id: int, db: Session):
 
     report = (
         db.query(CAMReport)
-        .filter(CAMReport.id == report_id, CAMReport.is_deleted == True)
+        .filter(CAMReport.id == report_id, CAMReport.is_deleted is True)
         .first()
     )
 
