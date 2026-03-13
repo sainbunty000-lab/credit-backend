@@ -4,13 +4,11 @@ from sqlalchemy import (
     String,
     DateTime,
     Boolean,
-    Index
+    Index,
 )
-
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 
-from core.database import Base
+from core.database import Base, JSONType
 
 
 class CAMReport(Base):
@@ -24,7 +22,7 @@ class CAMReport(Base):
     id = Column(
         Integer,
         primary_key=True,
-        index=True
+        index=True,
     )
 
     # ==================================================
@@ -34,13 +32,23 @@ class CAMReport(Base):
     customer_name = Column(
         String(255),
         nullable=False,
-        index=True
+        index=True,
     )
 
     customer_id = Column(
         String(100),
         nullable=True,
-        index=True
+        index=True,
+    )
+
+    # ==================================================
+    # ANALYST INFORMATION
+    # ==================================================
+
+    analyst_name = Column(
+        String(100),
+        nullable=True,
+        default="System",
     )
 
     # ==================================================
@@ -48,40 +56,56 @@ class CAMReport(Base):
     # ==================================================
 
     wc_data = Column(
-        JSONB,
+        JSONType,
         nullable=True,
-        default=lambda: {}
+        default=lambda: {},
     )
 
     agri_data = Column(
-        JSONB,
+        JSONType,
         nullable=True,
-        default=lambda: {}
+        default=lambda: {},
     )
 
     banking_data = Column(
-        JSONB,
+        JSONType,
         nullable=True,
-        default=lambda: {}
+        default=lambda: {},
     )
 
     # ==================================================
-    # DECISION METRICS (OPTIONAL BUT IMPORTANT)
+    # DECISION METRICS
     # ==================================================
+
+    loan_amount = Column(
+        Integer,
+        nullable=True,
+        default=0,
+    )
 
     recommended_limit = Column(
         Integer,
-        nullable=True
+        nullable=True,
     )
 
     risk_grade = Column(
         String(5),
-        nullable=True
+        nullable=True,
+    )
+
+    credit_grade = Column(
+        String(5),
+        nullable=True,
+    )
+
+    remarks = Column(
+        String(1000),
+        nullable=True,
     )
 
     loan_type = Column(
         String(50),
-        nullable=True
+        nullable=True,
     )
 
     # Example loan types
@@ -97,7 +121,7 @@ class CAMReport(Base):
     status = Column(
         String(50),
         default="Draft",
-        index=True
+        index=True,
     )
 
     # Possible statuses
@@ -113,18 +137,18 @@ class CAMReport(Base):
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
-        nullable=False
+        nullable=False,
     )
 
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
-        onupdate=func.now()
+        onupdate=func.now(),
     )
 
     created_by = Column(
         String(100),
-        nullable=True
+        nullable=True,
     )
 
     # ==================================================
@@ -134,12 +158,12 @@ class CAMReport(Base):
     is_deleted = Column(
         Boolean,
         default=False,
-        index=True
+        index=True,
     )
 
     deleted_at = Column(
         DateTime(timezone=True),
-        nullable=True
+        nullable=True,
     )
 
 
@@ -150,10 +174,10 @@ class CAMReport(Base):
 Index(
     "idx_cam_customer_status",
     CAMReport.customer_name,
-    CAMReport.status
+    CAMReport.status,
 )
 
 Index(
     "idx_cam_created_at",
-    CAMReport.created_at
+    CAMReport.created_at,
 )

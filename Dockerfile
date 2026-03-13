@@ -6,7 +6,8 @@ FROM python:3.10-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PORT=8080
 
 # =================================
 # SYSTEM DEPENDENCIES
@@ -55,12 +56,22 @@ RUN chown -R appuser:appuser /app
 USER appuser
 
 # =================================
+# EXPOSE PORT
+# Cloud Run injects PORT env var (default 8080).
+# EXPOSE is documentation only – actual binding is in CMD.
+# =================================
+EXPOSE 8080
+
+# =================================
 # HEALTH CHECK
 # =================================
 HEALTHCHECK --interval=30s --timeout=5s \
- CMD curl -f http://localhost:${PORT:-8000}/docs || exit 1
+ CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # =================================
 # START FASTAPI
+# Uses gunicorn with uvicorn workers.
+# Workers set to 1 for Cloud Run (scale via instances).
 # =================================
-CMD ["sh","-c","gunicorn main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8000} --workers 2"]
+CMD ["sh", "-c", "gunicorn main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT} --workers 1 --timeout 120"]
+

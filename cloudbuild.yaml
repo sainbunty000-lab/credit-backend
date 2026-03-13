@@ -1,0 +1,76 @@
+# =============================================================
+# Google Cloud Build configuration
+# Builds, pushes to Artifact Registry, and deploys to Cloud Run
+#
+# Required substitutions (set in Cloud Build trigger or CLI):
+#   _REGION         GCP region, e.g. asia-south1
+#   _SERVICE_NAME   Cloud Run service name, e.g. credit-backend
+#   _REPO           Artifact Registry repo, e.g. credit-backend
+#
+# Required Cloud Run env vars (set via Secret Manager or trigger):
+#   DATABASE_URL    Cloud SQL connection string
+#   ALLOWED_ORIGINS Comma-separated list of allowed frontend origins
+# =============================================================
+
+substitutions:
+  _REGION: asia-south1
+  _SERVICE_NAME: credit-backend
+  _REPO: credit-backend
+
+steps:
+  # -------------------------------------------------------
+  # Step 1 – Build the Docker image
+  # -------------------------------------------------------
+  - name: "gcr.io/cloud-builders/docker"
+    id: build
+    args:
+      - build
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:latest"
+      - "."
+
+  # -------------------------------------------------------
+  # Step 2 – Push both tags to Artifact Registry
+  # -------------------------------------------------------
+  - name: "gcr.io/cloud-builders/docker"
+    id: push-sha
+    args:
+      - push
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: push-latest
+    args:
+      - push
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:latest"
+
+  # -------------------------------------------------------
+  # Step 3 – Deploy to Cloud Run
+  # -------------------------------------------------------
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: deploy
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - "${_SERVICE_NAME}"
+      - "--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - "--region=${_REGION}"
+      - "--platform=managed"
+      - "--allow-unauthenticated"
+      - "--port=8080"
+      - "--memory=1Gi"
+      - "--cpu=1"
+      - "--min-instances=0"
+      - "--max-instances=10"
+      - "--timeout=120"
+      - "--set-env-vars=PYTHONUNBUFFERED=1"
+
+images:
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:latest"
+
+options:
+  logging: CLOUD_LOGGING_ONLY

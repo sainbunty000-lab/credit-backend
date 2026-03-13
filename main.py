@@ -1,11 +1,14 @@
 import time
 import logging
-from dotenv import load_dotenv
 import os
+from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
 
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -26,6 +29,17 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("credit_engine")
+
+
+# ======================================================
+# LIFESPAN (replaces deprecated @app.on_event)
+# ======================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Credit Intelligence Engine started successfully")
+    yield
+    logger.info("Credit Intelligence Engine shutting down")
 
 
 # ======================================================
@@ -51,18 +65,25 @@ app = FastAPI(
 
     redoc_url="/redoc",
 
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
+
+    lifespan=lifespan,
 )
 
 
 # ======================================================
 # CORS CONFIGURATION
+# Allow configuring origins via ALLOWED_ORIGINS env var
+# (comma-separated list) for production deployments.
 # ======================================================
+
+origins_env = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+ALLOWED_ORIGINS = [o.strip() for o in origins_env.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
 
-    allow_origins=["http://localhost:5173/"],  # Replace with frontend domain in production
+    allow_origins=ALLOWED_ORIGINS,
 
     allow_credentials=True,
 
@@ -93,15 +114,17 @@ async def add_process_time_header(request: Request, call_next):
 
 # ======================================================
 # ROUTERS
+# Each router already defines its own prefix – do NOT
+# pass an extra prefix= here or paths will be doubled.
 # ======================================================
 
 app.include_router(cam_router)
 
-app.include_router(wc_router, prefix="/wc")
+app.include_router(wc_router)
 
-app.include_router(agri_router, prefix="/agriculture")
+app.include_router(agri_router)
 
-app.include_router(bank_router, prefix="/banking")
+app.include_router(bank_router)
 
 
 # ======================================================
@@ -127,7 +150,7 @@ def root():
 
 # ======================================================
 # HEALTH CHECK
-# Used by Railway / GCP / Kubernetes
+# Used by GCP Cloud Run / Kubernetes
 # ======================================================
 
 @app.get("/health", tags=["System"])
@@ -161,21 +184,3 @@ async def global_exception_handler(request: Request, exc: Exception):
         }
     )
 
-# ======================================================
-# STARTUP EVENT
-# ======================================================
-
-@app.on_event("startup")
-async def startup_event():
-
-    logger.info("Credit Intelligence Engine started successfully")
-
-
-# ======================================================
-# SHUTDOWN EVENT
-# ======================================================
-
-@app.on_event("shutdown")
-async def shutdown_event():
-
-    logger.info("Credit Intelligence Engine shutting down")

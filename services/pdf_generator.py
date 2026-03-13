@@ -1,3 +1,6 @@
+import os
+import tempfile
+
 from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
@@ -45,32 +48,35 @@ def create_table(data):
 
 # =========================================
 # CAM PDF GENERATOR
+# Returns the full path to the generated PDF.
+# Uses /tmp so it works on Cloud Run and other
+# read-only container filesystems.
 # =========================================
 
 def generate_cam_pdf(data, filename="cam_report.pdf"):
 
     styles = getSampleStyleSheet()
 
+    # Always write to /tmp for compatibility with Cloud Run
+    output_path = os.path.join(tempfile.gettempdir(), filename)
+
     doc = SimpleDocTemplate(
-        f"downloads/{filename}",
+        output_path,
         rightMargin=40,
         leftMargin=40,
         topMargin=40,
         bottomMargin=40,
     )
 
-    elements = [Paragraph("<b>CREDIT APPRAISAL MEMO</b>", styles["Title"]), Spacer(1, 0.3 * inch), Paragraph("<b>Customer Details</b>", styles["Heading2"])]
-
-    # =========================================
-    # TITLE
-    # =========================================
-
-
+    elements = [
+        Paragraph("<b>CREDIT APPRAISAL MEMO</b>", styles["Title"]),
+        Spacer(1, 0.3 * inch),
+        Paragraph("<b>Customer Details</b>", styles["Heading2"]),
+    ]
 
     # =========================================
     # CUSTOMER DETAILS
     # =========================================
-
 
     customer_table = [
         ["Field", "Value"],
@@ -189,4 +195,5 @@ def generate_cam_pdf(data, filename="cam_report.pdf"):
 
     doc.build(elements)
 
-    return filename
+    return output_path
+
