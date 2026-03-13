@@ -2,8 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# Temporary SQLite database
-DATABASE_URL = "sqlite:///./credit.db"
+DATABASE_URL = "sqlite:///./credit_engine.db"
 
 engine = create_engine(
     DATABASE_URL,
