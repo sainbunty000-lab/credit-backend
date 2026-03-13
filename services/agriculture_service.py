@@ -75,8 +75,7 @@ def calculate_agri_logic(
         - existing_emi_monthly
     )
 
-    if max_new_emi_allowed < 0:
-        max_new_emi_allowed = 0
+    max_new_emi_allowed = max(max_new_emi_allowed, 0)
 
     # ======================================================
     # LOAN ELIGIBILITY MODEL 1 (EMI MODEL)
