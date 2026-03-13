@@ -13,7 +13,7 @@ router = APIRouter(prefix="/cam", tags=["CAM Dashboard"])
 @router.get("/all")
 def get_all_reports(db: Session = Depends(get_db)):
 
-    reports = db.query(CAMReport).order_by(CAMReport.id.desc()).all()
+    reports = db.query(CAMReport).filter(CAMReport.is_deleted == False).order_by(CAMReport.id.desc()).all()
 
     return [
         {
@@ -51,7 +51,7 @@ def create_cam(data: CAMCreate, db: Session = Depends(get_db)):
 @router.put("/autosave/{report_id}")
 def autosave_cam(report_id: int, data: CAMUpdate, db: Session = Depends(get_db)):
 
-    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
+    report = db.query(CAMReport).filter(CAMReport.id == report_id, CAMReport.is_deleted == False).first()
 
     if not report:
         raise HTTPException(status_code=404, detail="Report Not Found")
@@ -68,7 +68,7 @@ def autosave_cam(report_id: int, data: CAMUpdate, db: Session = Depends(get_db))
 @router.post("/submit/{report_id}")
 def submit_cam(report_id: int, data: CAMSubmit, db: Session = Depends(get_db)):
 
-    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
+    report = db.query(CAMReport).filter(CAMReport.id == report_id, CAMReport.is_deleted == False).first()
 
     if not report:
         raise HTTPException(status_code=404, detail="Report Not Found")
@@ -89,7 +89,7 @@ def submit_cam(report_id: int, data: CAMSubmit, db: Session = Depends(get_db)):
 @router.get("/pdf/{report_id}")
 def download_pdf(report_id: int, db: Session = Depends(get_db)):
 
-    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
+    report = db.query(CAMReport).filter(CAMReport.id == report_id, CAMReport.is_deleted == False).first()
 
     if not report:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -107,7 +107,7 @@ def download_pdf(report_id: int, db: Session = Depends(get_db)):
 @router.get("/{report_id}")
 def get_cam(report_id: int, db: Session = Depends(get_db)):
 
-    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
+    report = db.query(CAMReport).filter(CAMReport.id == report_id, CAMReport.is_deleted == False).first()
 
     if not report:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -127,12 +127,12 @@ def get_cam(report_id: int, db: Session = Depends(get_db)):
 @router.delete("/{report_id}")
 def delete_cam(report_id: int, db: Session = Depends(get_db)):
 
-    report = db.query(CAMReport).filter(CAMReport.id == report_id).first()
+    report = db.query(CAMReport).filter(CAMReport.id == report_id, CAMReport.is_deleted == False).first()
 
     if not report:
         raise HTTPException(status_code=404, detail="Not Found")
 
-    db.delete(report)
+    report.is_deleted = True
     db.commit()
 
     return {"message": "Report Deleted"}

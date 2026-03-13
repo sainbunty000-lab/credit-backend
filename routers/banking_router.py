@@ -66,7 +66,7 @@ async def banking_manual_analysis(data: BankingInput):
 
     try:
 
-        transactions = [txn.dict() for txn in data.transactions]
+        transactions = [txn.model_dump() for txn in data.transactions]
 
         result = analyze_banking(transactions)
 

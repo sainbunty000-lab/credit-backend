@@ -1,11 +1,9 @@
 import time
 import logging
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -100,11 +98,11 @@ async def add_process_time_header(request: Request, call_next):
 
 app.include_router(cam_router)
 
-app.include_router(wc_router, prefix="/wc")
+app.include_router(wc_router)
 
-app.include_router(agri_router, prefix="/agriculture")
+app.include_router(agri_router)
 
-app.include_router(bank_router, prefix="/banking")
+app.include_router(bank_router)
 
 
 # ======================================================
