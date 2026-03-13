@@ -117,26 +117,15 @@ def parse_table_row(row):
 
         debit = 0
         credit = 0
-
         row_text = " ".join([str(x).lower() for x in row])
-
         if "dr" in row_text:
             debit = amount
-
         elif "cr" in row_text:
             credit = amount
 
         description = extract_description(row)
-
-        return {
-            "date": date,
-            "description": description,
-            "debit": debit,
-            "credit": credit,
-            "balance": balance
-        }
-
-    except:
+        return {'date': date, "description": description, "debit": debit, "credit": credit, 'balance': balance}
+    except Exception:
         return None
 
 
@@ -229,7 +218,7 @@ def parse_date(date_str):
 
         try:
             return datetime.strptime(date_str, f)
-        except:
+        except Exception:
             continue
 
     return datetime.now()
@@ -253,7 +242,7 @@ def extract_numbers(values):
 
             try:
                 numbers.append(float(n))
-            except:
+            except Exception:
                 pass
 
     return numbers
@@ -267,15 +256,13 @@ def normalize_number(value):
             return 0
 
         value = str(value)
-
         value = value.replace(",", "")
-        value = value.replace("₹", "")
+        value = value.replace('₹', '')
         value = value.replace("Dr", "")
         value = value.replace("Cr", "")
 
         return float(value)
-
-    except:
+    except Exception:
         return 0
 
 
@@ -286,12 +273,10 @@ def normalize_number(value):
 def extract_description(row):
 
     try:
-
         text = " ".join([str(x) for x in row if x])
 
         return clean_narration(text)
-
-    except:
+    except Exception:
         return ""
 
 
