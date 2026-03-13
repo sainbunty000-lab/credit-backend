@@ -143,8 +143,7 @@ def extract_numbers(values):
                     continue
 
                 numbers.append(val)
-
-            except:
+            except Exception:
                 pass
 
     return numbers

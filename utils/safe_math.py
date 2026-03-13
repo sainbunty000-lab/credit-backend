@@ -16,8 +16,7 @@ def safe_divide(n, d):
             return 0
 
         return n / d
-
-    except:
+    except Exception:
         return 0
 
 
@@ -39,8 +38,7 @@ def safe_subtract(a, b, allow_negative=False):
             return max(0, result)
 
         return result
-
-    except:
+    except Exception:
         return 0
 
 
@@ -52,7 +50,7 @@ def safe_add(a, b):
 
     try:
         return normalize_number(a) + normalize_number(b)
-    except:
+    except Exception:
         return 0
 
 
@@ -64,7 +62,7 @@ def safe_multiply(a, b):
 
     try:
         return normalize_number(a) * normalize_number(b)
-    except:
+    except Exception:
         return 0
 
 
@@ -81,11 +79,9 @@ def default_zero(val):
             return 0.0
 
         val = str(val)
-
         val = val.replace(",", "")
-        val = val.replace("₹", "")
+        val = val.replace('₹', '')
         val = val.strip()
-
         if val == "":
             return 0.0
 
@@ -95,8 +91,7 @@ def default_zero(val):
             return 0.0
 
         return num
-
-    except:
+    except Exception:
         return 0.0
 
 
@@ -113,11 +108,9 @@ def normalize_number(val):
     try:
 
         val = str(val)
-
         val = val.replace(",", "")
-        val = val.replace("₹", "")
+        val = val.replace('₹', '')
         val = val.strip()
-
         if val == "":
             return 0.0
 
@@ -127,6 +120,5 @@ def normalize_number(val):
             return 0.0
 
         return num
-
-    except:
+    except Exception:
         return 0.0

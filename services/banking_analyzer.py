@@ -48,24 +48,8 @@ def normalize_transactions(transactions):
     for txn in transactions:
 
         try:
-
-            normalized.append({
-
-                "date": str(txn.get("date", "")).strip(),
-
-                "description": str(
-                    txn.get("description", "")
-                ).strip(),
-
-                "credit": normalize_number(txn.get("credit")),
-
-                "debit": normalize_number(txn.get("debit")),
-
-                "balance": normalize_number(txn.get("balance"))
-
-            })
-
-        except:
+            normalized.append({"date": str(txn.get("date", "")).strip(), "description": str(txn.get("description", "")).strip(), "credit": normalize_number(txn.get("credit")), "debit": normalize_number(txn.get("debit")), "balance": normalize_number(txn.get("balance"))})
+        except Exception:
             continue
 
     return normalized
@@ -83,13 +67,11 @@ def normalize_number(value):
             return 0.0
 
         value = str(value)
-
         value = value.replace(",", "")
-        value = value.replace("₹", "")
+        value = value.replace('₹', '')
 
         return float(value)
-
-    except:
+    except Exception:
         return 0.0
 
 
@@ -186,10 +168,8 @@ def parse_date_safe(date_str):
 
         if not date_str:
             return datetime.min
-
         return datetime.strptime(date_str, "%d/%m/%y")
-
-    except:
+    except Exception:
         return datetime.min
 
 
