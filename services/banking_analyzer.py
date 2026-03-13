@@ -32,9 +32,7 @@ def analyze_transactions(transactions):
     # -------------------------------------
     # Add derived indicators
     # -------------------------------------
-    enriched = enrich_with_indicators(banking_result)
-
-    return enriched
+    return enrich_with_indicators(banking_result)
 
 
 # =====================================================
