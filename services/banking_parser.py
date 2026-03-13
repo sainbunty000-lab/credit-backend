@@ -32,14 +32,16 @@ def parse_banking_file(file_bytes):
 
             for page in pdf.pages:
 
-                # --------------------------------
+                # ======================================
                 # TABLE PARSING
-                # --------------------------------
+                # ======================================
 
                 tables = page.extract_tables()
 
                 if tables:
+
                     for table in tables:
+
                         for row in table:
 
                             txn = parse_table_row(row)
@@ -47,9 +49,9 @@ def parse_banking_file(file_bytes):
                             if txn:
                                 transactions.append(txn)
 
-                # --------------------------------
-                # TEXT PARSING FALLBACK
-                # --------------------------------
+                # ======================================
+                # TEXT FALLBACK PARSING
+                # ======================================
 
                 text = page.extract_text()
 
@@ -68,24 +70,36 @@ def parse_banking_file(file_bytes):
     except Exception:
         return []
 
+    # ======================================
+    # REMOVE DUPLICATES
+    # ======================================
+
+    transactions = list({(t['date'], t['balance']): t for t in transactions}.values())
+
+    # ======================================
+    # SORT BY DATE
+    # ======================================
+
+    transactions.sort(key=lambda x: parse_date(x["date"]))
+
     return transactions
 
 
 # =====================================================
-# TABLE PARSER
+# TABLE ROW PARSER
 # =====================================================
 
 def parse_table_row(row):
 
-    if not row or len(row) < 3:
+    if not row:
         return None
 
     try:
 
-        # Find date in row
         date = None
 
         for cell in row:
+
             if is_date(cell):
                 date = cell
                 break
@@ -93,10 +107,7 @@ def parse_table_row(row):
         if not date:
             return None
 
-        # Extract numbers
-        numbers = [normalize_number(x) for x in row]
-
-        numbers = [n for n in numbers if n > 0]
+        numbers = extract_numbers(row)
 
         if len(numbers) < 2:
             return None
@@ -107,17 +118,12 @@ def parse_table_row(row):
         debit = 0
         credit = 0
 
-        # Detect DR/CR
         row_text = " ".join([str(x).lower() for x in row])
 
         if "dr" in row_text:
             debit = amount
 
         elif "cr" in row_text:
-            credit = amount
-
-        else:
-            # fallback unknown
             credit = amount
 
         description = extract_description(row)
@@ -161,21 +167,21 @@ def parse_text_line(line, transactions):
     debit = 0
     credit = 0
 
-    # --------------------------------
-    # DR / CR detection
-    # --------------------------------
+    line_lower = line.lower()
 
-    if "dr" in line.lower():
+    # ======================================
+    # DR / CR DETECTION
+    # ======================================
+
+    if "dr" in line_lower:
         debit = amount
 
-    elif "cr" in line.lower():
+    elif "cr" in line_lower:
         credit = amount
 
     else:
 
-        # --------------------------------
         # Balance movement fallback
-        # --------------------------------
 
         if transactions:
 
@@ -190,8 +196,7 @@ def parse_text_line(line, transactions):
 
             credit = amount
 
-    narration = line.replace(date, "")
-    narration = clean_narration(narration)
+    narration = clean_narration(line.replace(date, ""))
 
     return {
         "date": date,
@@ -203,25 +208,7 @@ def parse_text_line(line, transactions):
 
 
 # =====================================================
-# DESCRIPTION EXTRACTION
-# =====================================================
-
-def extract_description(row):
-
-    try:
-
-        text = " ".join([str(x) for x in row if x])
-
-        text = clean_narration(text)
-
-        return text
-
-    except:
-        return ""
-
-
-# =====================================================
-# DATE DETECTION
+# DATE HELPERS
 # =====================================================
 
 def is_date(value):
@@ -234,9 +221,43 @@ def is_date(value):
     return bool(DATE_REGEX.match(value))
 
 
+def parse_date(date_str):
+
+    formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y"]
+
+    for f in formats:
+
+        try:
+            return datetime.strptime(date_str, f)
+        except:
+            continue
+
+    return datetime.now()
+
+
 # =====================================================
-# NUMBER NORMALIZATION
+# NUMBER EXTRACTION
 # =====================================================
+
+def extract_numbers(values):
+
+    numbers = []
+
+    for v in values:
+
+        nums = re.findall(r"-?\d+(?:,\d{3})*(?:\.\d+)?", str(v))
+
+        for n in nums:
+
+            n = n.replace(",", "")
+
+            try:
+                numbers.append(float(n))
+            except:
+                pass
+
+    return numbers
+
 
 def normalize_number(value):
 
@@ -251,12 +272,27 @@ def normalize_number(value):
         value = value.replace("₹", "")
         value = value.replace("Dr", "")
         value = value.replace("Cr", "")
-        value = value.strip()
 
         return float(value)
 
     except:
         return 0
+
+
+# =====================================================
+# DESCRIPTION EXTRACTION
+# =====================================================
+
+def extract_description(row):
+
+    try:
+
+        text = " ".join([str(x) for x in row if x])
+
+        return clean_narration(text)
+
+    except:
+        return ""
 
 
 # =====================================================
@@ -270,5 +306,3 @@ def clean_narration(text):
     text = text.replace("\n", " ")
 
     return text.strip()
-
-transactions = list({(t['date'], t['balance']): t for t in transactions}.values())
