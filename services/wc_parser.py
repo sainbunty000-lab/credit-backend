@@ -12,9 +12,8 @@ from services.ocr_table_extractor import (
     pick_value_from_row,
 )
 
-
 # ==========================================================
-# UNIT OVERRIDE (from dropdown)
+# UNIT OVERRIDE (internal only; router passes None => Auto)
 # ==========================================================
 
 def unit_override_multiplier(unit_override: str | None) -> int | None:
@@ -53,8 +52,8 @@ def unit_override_multiplier(unit_override: str | None) -> int | None:
 def resolve_multiplier(detected_multiplier: int, unit_override: str | None) -> int:
     """
     Priority:
-    1) dropdown override
-    2) detected multiplier from statement
+    1) override (if provided)
+    2) detected multiplier from statement text
     3) safe default => 1
     """
     override_mult = unit_override_multiplier(unit_override)
@@ -71,8 +70,7 @@ def resolve_multiplier(detected_multiplier: int, unit_override: str | None) -> i
 # MAIN ENTRY
 # ==========================================================
 
-def parse_financial_file(file, filename, unit_override: str | None = None, debug: bool = True):
-
+def parse_financial_file(file, filename, unit_override: str | None = None, debug: bool = False):
     if isinstance(file, bytes):
         file_bytes = file
     else:
@@ -81,64 +79,34 @@ def parse_financial_file(file, filename, unit_override: str | None = None, debug
     filename_lower = (filename or "").lower()
 
     extracted = {}
-    debug_info = {
-        "filename": filename,
-        "unit_override": unit_override,
-        "path_used": None,
-        "detected_years": [],
-        "detected_multiplier": None,
-        "multiplier_used": None,
-        "extracted_keys_count": 0,
-        "extracted_keys": [],
-    }
 
     if filename_lower.endswith(".pdf"):
-        extracted, dbg = parse_pdf_tables(file_bytes, unit_override=unit_override, debug=debug)
-        if extracted:
-            debug_info.update(dbg or {})
-            debug_info["path_used"] = "pdf_tables"
-        else:
+        extracted, _dbg = parse_pdf_tables(file_bytes, unit_override=unit_override, debug=False)
+        if not extracted:
             if not is_probably_scanned_pdf(file_bytes):
                 text = extract_text_from_pdf_bytes(file_bytes)
                 if text:
                     detected_mult = detect_multiplier(text)
                     mult_used = resolve_multiplier(detected_mult, unit_override)
                     extracted = parse_text_lines(text.splitlines(), mult_used)
-                    debug_info["path_used"] = "pdf_text"
-                    debug_info["detected_multiplier"] = detected_mult
-                    debug_info["multiplier_used"] = mult_used
 
             if not extracted:
-                extracted, dbg = parse_scanned_pdf_with_ocr(file_bytes, unit_override=unit_override, debug=debug)
-                debug_info.update(dbg or {})
-                debug_info["path_used"] = "pdf_ocr"
+                extracted, _dbg = parse_scanned_pdf_with_ocr(file_bytes, unit_override=unit_override, debug=False)
 
     elif filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls"):
         extracted = parse_excel(file_bytes)
-        debug_info["path_used"] = "excel"
 
     elif filename_lower.endswith(".csv"):
         extracted = parse_csv(file_bytes)
-        debug_info["path_used"] = "csv"
 
     elif filename_lower.endswith(".jpg") or filename_lower.endswith(".jpeg") or filename_lower.endswith(".png"):
-        extracted, dbg = parse_image_statement(file_bytes, unit_override=unit_override, debug=debug)
-        debug_info.update(dbg or {})
-        debug_info["path_used"] = "image_ocr"
+        extracted, _dbg = parse_image_statement(file_bytes, unit_override=unit_override, debug=False)
 
     else:
         extracted = {}
-        debug_info["path_used"] = "unsupported"
 
     calculations = calculate_financial_metrics(extracted)
-
-    debug_info["extracted_keys_count"] = len(extracted)
-    debug_info["extracted_keys"] = sorted(list(extracted.keys()))
-
-    out = {"inputs": extracted, "calculations": calculations}
-    if debug:
-        out["debug"] = debug_info
-    return out
+    return {"inputs": extracted, "calculations": calculations}
 
 
 # ==========================================================
@@ -148,6 +116,11 @@ def parse_financial_file(file, filename, unit_override: str | None = None, debug
 def parse_image_statement(image_bytes: bytes, unit_override: str | None = None, debug: bool = False):
     rows, year_cols, detected_mult = extract_rows_years_multiplier_from_image_bytes(image_bytes)
     prefer_year = latest_year(year_cols)
+
+    # Fallback: if OCR extractor didn't detect multiplier, try detecting from all OCR row text
+    if not detected_mult:
+        all_text = " ".join(" ".join(t.text for t in row) for row in rows)
+        detected_mult = detect_multiplier(all_text)
 
     mult_used = resolve_multiplier(detected_mult, unit_override)
 
@@ -172,31 +145,18 @@ def parse_image_statement(image_bytes: bytes, unit_override: str | None = None, 
 
                     val = val * mult_used
 
-                    if abs(val) < 50:
+                    # Don't drop small values (lakhs/crores/decimals)
+                    if abs(val) < 1:
                         continue
 
                     result[key] = val
                     break
 
-    dbg = None
-    if debug:
-        dbg = {
-            "detected_years": [y for y, _x in year_cols],
-            "detected_multiplier": detected_mult,
-            "multiplier_used": mult_used,
-            "unit_override": unit_override,
-            "extracted_keys_count": len(result),
-            "extracted_keys": sorted(list(result.keys())),
-        }
-
-    return result, dbg
+    return result, None
 
 
 def parse_scanned_pdf_with_ocr(pdf_bytes: bytes, unit_override: str | None = None, debug: bool = False):
     merged = {}
-    detected_years_union = set()
-    detected_mults = []
-    used_mults = []
 
     images = pdf_to_images(pdf_bytes, dpi=250)
 
@@ -205,33 +165,13 @@ def parse_scanned_pdf_with_ocr(pdf_bytes: bytes, unit_override: str | None = Non
         img.save(buf, format="PNG")
         page_bytes = buf.getvalue()
 
-        page_res, page_dbg = parse_image_statement(page_bytes, unit_override=unit_override, debug=debug)
+        page_res, _page_dbg = parse_image_statement(page_bytes, unit_override=unit_override, debug=False)
 
         for k, v in page_res.items():
             if k not in merged:
                 merged[k] = v
 
-        if debug and page_dbg:
-            for y in page_dbg.get("detected_years", []):
-                detected_years_union.add(y)
-            detected_mults.append(page_dbg.get("detected_multiplier"))
-            used_mults.append(page_dbg.get("multiplier_used"))
-
-    dbg = None
-    if debug:
-        detected_mult = next((m for m in detected_mults if m is not None), None)
-        mult_used = next((m for m in used_mults if m is not None), None)
-
-        dbg = {
-            "detected_years": sorted(list(detected_years_union)),
-            "detected_multiplier": detected_mult,
-            "multiplier_used": mult_used,
-            "unit_override": unit_override,
-            "extracted_keys_count": len(merged),
-            "extracted_keys": sorted(list(merged.keys())),
-        }
-
-    return merged, dbg
+    return merged, None
 
 
 # ==========================================================
@@ -240,19 +180,12 @@ def parse_scanned_pdf_with_ocr(pdf_bytes: bytes, unit_override: str | None = Non
 
 def parse_pdf_tables(file_bytes, unit_override: str | None = None, debug: bool = False):
     result = {}
-    detected_mult_any = None
-    mult_used_any = None
 
     with pdfplumber.open(BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
             text = page.extract_text() or ""
             detected_mult = detect_multiplier(text)
             mult_used = resolve_multiplier(detected_mult, unit_override)
-
-            if detected_mult_any is None:
-                detected_mult_any = detected_mult
-            if mult_used_any is None:
-                mult_used_any = mult_used
 
             tables = page.extract_tables()
             for table in tables:
@@ -262,18 +195,7 @@ def parse_pdf_tables(file_bytes, unit_override: str | None = None, debug: bool =
                     if k not in result:
                         result[k] = v
 
-    dbg = None
-    if debug:
-        dbg = {
-            "detected_years": [],
-            "detected_multiplier": detected_mult_any,
-            "multiplier_used": mult_used_any,
-            "unit_override": unit_override,
-            "extracted_keys_count": len(result),
-            "extracted_keys": sorted(list(result.keys())),
-        }
-
-    return result, dbg
+    return result, None
 
 
 # ==========================================================
@@ -319,7 +241,9 @@ def parse_text_lines(lines, multiplier: int = 1) -> dict:
             continue
 
         value = numbers[-1] * multiplier
-        if abs(value) < 100:
+
+        # Don't drop small values (lakhs/crores/decimals)
+        if abs(value) < 1:
             continue
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
@@ -334,23 +258,101 @@ def parse_text_lines(lines, multiplier: int = 1) -> dict:
 
 
 # ==========================================================
-# TABLE PROCESSOR
+# TABLE PROCESSOR (proper year-column selection)
 # ==========================================================
+
+def _is_year_token(s: str) -> bool:
+    try:
+        n = int(float(str(s).strip().replace(",", "")))
+        return 1900 <= n <= 2100
+    except Exception:
+        return False
+
+
+def _find_year_header_row_and_cols(df: pd.DataFrame):
+    """
+    Returns: (header_row_index, year_col_indices, latest_year_col_index)
+    or (None, [], None) if not found.
+    """
+    best_header_row = None
+    best_year_cols = []
+    best_latest_year_col = None
+
+    for r in range(min(len(df.index), 30)):  # scan top area for year header
+        row = df.iloc[r].tolist()
+        year_cols = []
+        years = []
+        for c, cell in enumerate(row):
+            cell_str = str(cell).strip()
+            if _is_year_token(cell_str):
+                year_cols.append(c)
+                years.append(int(float(cell_str)))
+
+        if year_cols:
+            max_year = max(years)
+            max_year_col = year_cols[years.index(max_year)]
+            if best_header_row is None or len(year_cols) > len(best_year_cols):
+                best_header_row = r
+                best_year_cols = year_cols
+                best_latest_year_col = max_year_col
+
+    return best_header_row, best_year_cols, best_latest_year_col
+
+
+def _extract_number(s: str):
+    s = str(s)
+    s = re.sub(r"\(([^)]+)\)", r"-\1", s)  # (123) => -123
+    matches = re.findall(r"-?\d+(?:,\d{3})*(?:\.\d+)?", s)
+    if not matches:
+        return None
+    m = matches[-1].replace(",", "")
+    try:
+        val = float(m)
+        if 1900 <= val <= 2100:
+            return None
+        return val
+    except Exception:
+        return None
+
+
+def _pick_value_from_row_by_year_col(row_values, latest_year_col_idx):
+    if latest_year_col_idx is None:
+        return None
+    if latest_year_col_idx < 0 or latest_year_col_idx >= len(row_values):
+        return None
+    return _extract_number(row_values[latest_year_col_idx])
+
 
 def parse_financial_table(df, multiplier):
     result = {}
-    for _, row in df.iterrows():
-        row_values = [str(v) for v in row if v]
-        if not row_values:
+
+    header_row_idx, _year_cols, latest_year_col = _find_year_header_row_and_cols(df)
+
+    for r_idx, row in df.iterrows():
+        row_values = [str(v) for v in row.tolist()]
+
+        # skip header row itself
+        if header_row_idx is not None and r_idx == header_row_idx:
             continue
 
-        row_text = " ".join(row_values).lower()
-        numbers = extract_numbers(row_values)
-        if not numbers:
+        row_text = " ".join([v for v in row_values if v and v.strip()]).lower()
+        if not row_text.strip():
             continue
 
-        value = pick_latest_value(numbers) * multiplier
-        if abs(value) < 100:
+        # Prefer value from latest year column
+        value = _pick_value_from_row_by_year_col(row_values, latest_year_col)
+
+        # Fallback: right-most non-year number
+        if value is None:
+            numbers = extract_numbers(row_values)
+            if not numbers:
+                continue
+            value = pick_latest_value(numbers)
+
+        value = value * multiplier
+
+        # Don't drop small values (lakhs/crores/decimals)
+        if abs(value) < 1:
             continue
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
@@ -359,6 +361,7 @@ def parse_financial_table(df, multiplier):
             for keyword in keywords:
                 if keyword in row_text or fuzzy_match(keyword, row_text):
                     result[key] = value
+                    break
 
     return result
 
@@ -396,13 +399,15 @@ def extract_numbers(values):
 
 
 def pick_latest_value(numbers):
-    if len(numbers) >= 2:
-        return numbers[-2]
-    return numbers[-1]
+    # pick the right-most non-year number (usually the latest year column)
+    filtered = [n for n in numbers if not (1900 <= n <= 2100)]
+    if not filtered:
+        return numbers[-1]
+    return filtered[-1]
 
 
 # ==========================================================
-# UNIT DETECTION (text PDFs)
+# UNIT DETECTION
 # ==========================================================
 
 def detect_multiplier(text):
