@@ -1,6 +1,3 @@
-cd ~/credit-backend/credit-backend
-
-cat > services/wc_parser.py <<'PY'
 import re
 from io import BytesIO
 from difflib import SequenceMatcher
@@ -393,4 +390,3 @@ def calculate_financial_metrics(data):
         "debt_equity": debt_equity,
         "net_margin": net_margin,
     }
-PY
