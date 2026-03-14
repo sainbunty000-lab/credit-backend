@@ -419,4 +419,3 @@ def calculate_financial_metrics(data):
         "debt_equity": debt_equity,
         "net_margin": net_margin,
     }
-PY
