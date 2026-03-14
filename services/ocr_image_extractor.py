@@ -1,48 +1,43 @@
+from pathlib import Path
 import re
-from io import BytesIO
 
-from PIL import Image, ImageOps, ImageEnhance
-import pytesseract
+p = Path("services/ocr_image_extractor.py")
+s = p.read_text(encoding="utf-8")
 
-
-def _preprocess(img: Image.Image) -> Image.Image:
-    img = img.convert("L")
-    img = ImageOps.autocontrast(img)
-    img = ImageEnhance.Contrast(img).enhance(2.0)
-
-    # upscale improves OCR a lot on statements
-    w, h = img.size
-    img = img.resize((int(w * 2), int(h * 2)))
-    return img
-
-
-def ocr_text_from_image_bytes(image_bytes: bytes) -> str:
-    img = Image.open(BytesIO(image_bytes))
-    img = _preprocess(img)
-
-    # psm 6: assume a uniform block of text
-    config = "--oem 3 --psm 6"
-    return pytesseract.image_to_string(img, config=config)
-
-
-def extract_amount_from_line(line: str):
-    """
-    Extract the largest numeric token from a line.
-    Handles Indian comma formats and (123) negatives.
-    """
+# Replace the whole function definition
+s = re.sub(
+    r"def extract_amount_from_line\(line: str\):[\s\S]*?$",
+    """def extract_amount_from_line(line: str):
+    \"""
+    Extract the most plausible amount from a line.
+    Handles common OCR issues:
+      - Indian commas: 13,93,827
+      - spaces inside number: 13 93 827
+      - dots used as separators: 13.93.827
+      - parentheses negatives: (123)
+    Returns the largest-magnitude parsed value.
+    \"""
     s = str(line)
-    s = re.sub(r"\(([^)]+)\)", r"-\1", s)
 
-    # accept normal + indian grouping
-    matches = re.findall(r"-?\d+(?:,\d{2})*(?:,\d{3})*(?:\.\d+)?", s)
-    if not matches:
+    # negatives in parentheses
+    s = re.sub(r"\\(([^)]+)\\)", r"-\\1", s)
+
+    # normalize separators inside numbers
+    # 13 93 827 -> 13,93,827 (join spaces between digit groups)
+    s = re.sub(r"(?<=\\d)\\s+(?=\\d)", "", s)
+
+    # 13.93.827 -> 13,93,827 (dots as group separators)
+    s = re.sub(r"(?<=\\d)\\.(?=\\d{2,3}(\\D|$))", ",", s)
+
+    # capture number candidates (allows Indian grouping)
+    candidates = re.findall(r"-?\\d+(?:,\\d{2})*(?:,\\d{3})*(?:\\.\\d+)?", s)
+    if not candidates:
         return None
 
     vals = []
-    for m in matches:
-        m2 = m.replace(",", "")
+    for c in candidates:
         try:
-            vals.append(float(m2))
+            vals.append(float(c.replace(",", "")))
         except Exception:
             pass
 
@@ -50,3 +45,10 @@ def extract_amount_from_line(line: str):
         return None
 
     return max(vals, key=lambda x: abs(x))
+""",
+    s,
+    flags=re.M
+)
+
+p.write_text(s, encoding="utf-8")
+print("Updated services/ocr_image_extractor.py")
