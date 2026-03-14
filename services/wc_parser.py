@@ -1,3 +1,6 @@
+cd ~/credit-backend/credit-backend
+
+cat > services/wc_parser.py <<'PY'
 import pdfplumber
 import pandas as pd
 import re
@@ -49,7 +52,7 @@ def pick_latest_value(numbers):
 
 
 # ==========================================================
-# Unit detection & scaling (AUTO)
+# A) Unit detection & scaling (AUTO)
 # ==========================================================
 
 def _contains_any(text: str, keywords: list[str]) -> bool:
@@ -60,11 +63,10 @@ def _contains_any(text: str, keywords: list[str]) -> bool:
 def detect_multiplier(text: str) -> int:
     """
     Auto-detect unit multiplier from text.
-    Make sure UNIT_SCALE_KEYWORDS supports "thousand" variants.
+    Ensures "thousand" variants are detected even if UNIT_SCALE_KEYWORDS is incomplete.
     """
     text = (text or "").lower()
 
-    # hard add common thousand variants (even if UNIT_SCALE_KEYWORDS missing)
     thousand_variants = [
         "in thousand", "in thousands",
         "(in thousand)", "(in thousands)",
@@ -76,7 +78,6 @@ def detect_multiplier(text: str) -> int:
     if _contains_any(text, thousand_variants):
         return 1000
 
-    # fallback to your dictionary
     for unit, keywords in UNIT_SCALE_KEYWORDS.items():
         for k in keywords:
             if k in text:
@@ -93,17 +94,13 @@ def detect_multiplier(text: str) -> int:
 
 
 def resolve_multiplier(detected_multiplier: int) -> int:
-    """
-    You removed manual override from endpoints.
-    So we always use detected (if found) else 1.
-    """
     if detected_multiplier and detected_multiplier != 1:
         return detected_multiplier
     return 1
 
 
 # ==========================================================
-# Post processing: compute totals from components
+# C) Post processing: compute totals from components
 # ==========================================================
 
 def _sum_present(inputs: dict, keys: list[str]) -> float:
@@ -123,13 +120,10 @@ def _sum_present(inputs: dict, keys: list[str]) -> float:
 
 def normalize_wc_inputs(inputs: dict) -> dict:
     """
-    C) Mapping + computed totals:
-    If current_assets/current_liabilities not explicitly present, compute from components.
-    This makes your backend match the manual logic you used on the statement.
+    If current_assets/current_liabilities are missing, compute from components.
     """
     inputs = dict(inputs or {})
 
-    # compute current_assets if missing/0 but components exist
     if not inputs.get("current_assets"):
         ca = _sum_present(inputs, [
             "inventory",
@@ -141,7 +135,6 @@ def normalize_wc_inputs(inputs: dict) -> dict:
         if ca:
             inputs["current_assets"] = ca
 
-    # compute current_liabilities if missing/0 but components exist
     if not inputs.get("current_liabilities"):
         cl = _sum_present(inputs, [
             "payables",
@@ -156,7 +149,7 @@ def normalize_wc_inputs(inputs: dict) -> dict:
 
 
 # ==========================================================
-# Proper table extraction (pick latest-year column)
+# B) Proper table extraction: pick value under latest-year column
 # ==========================================================
 
 def _is_year_token(s: str) -> bool:
@@ -175,7 +168,7 @@ def _find_year_header_row_and_cols(df: pd.DataFrame):
     best_year_cols = []
     best_latest_year_col = None
 
-    for r in range(min(len(df.index), 30)):  # scan top for header row
+    for r in range(min(len(df.index), 30)):
         row = df.iloc[r].tolist()
         year_cols = []
         years = []
@@ -236,10 +229,8 @@ def parse_financial_table(df, multiplier):
         if not row_text.strip():
             continue
 
-        # B) proper table extraction: pick value under latest year column
         value = _pick_value_from_row_by_year_col(row_values, latest_year_col)
 
-        # fallback: right-most non-year number
         if value is None:
             numbers = extract_numbers(row_values)
             if not numbers:
@@ -248,7 +239,7 @@ def parse_financial_table(df, multiplier):
 
         value = value * multiplier
 
-        # don't drop small values (important for lakhs/crores/decimals/OCR)
+        # don't drop small values
         if abs(value) < 1:
             continue
 
@@ -296,7 +287,6 @@ def parse_image_statement(image_bytes: bytes):
     rows, year_cols, detected_mult = extract_rows_years_multiplier_from_image_bytes(image_bytes)
     prefer_year = latest_year(year_cols)
 
-    # A) unit detection fallback for images
     if not detected_mult:
         all_text = " ".join(" ".join(t.text for t in row) for row in rows)
         detected_mult = detect_multiplier(all_text)
@@ -307,7 +297,6 @@ def parse_image_statement(image_bytes: bytes):
     for row in rows:
         row_text = " ".join(t.text for t in row).lower()
 
-        # skip footer/signature noise
         if "signed in terms" in row_text or "chartered accountants" in row_text:
             continue
 
@@ -350,8 +339,7 @@ def parse_pdf_tables(file_bytes):
     with pdfplumber.open(BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
             text = page.extract_text() or ""
-            detected_mult = detect_multiplier(text)
-            mult_used = resolve_multiplier(detected_mult)
+            mult_used = resolve_multiplier(detect_multiplier(text))
 
             tables = page.extract_tables()
             for table in tables:
@@ -423,7 +411,6 @@ def parse_financial_file(file, filename):
     else:
         extracted = {}
 
-    # C) compute current_assets/current_liabilities from components if not present
     extracted = normalize_wc_inputs(extracted)
 
     calculations = calculate_financial_metrics(extracted)
@@ -480,3 +467,4 @@ def calculate_financial_metrics(data):
         "debt_equity": debt_equity,
         "net_margin": net_margin
     }
+PY
