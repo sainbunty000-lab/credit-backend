@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 from typing import List
 
-from services.banking_service import analyze_banking
+from services.banking_analyzer import analyze_transactions
 from services.banking_parser import parse_banking_file
 
 
@@ -66,9 +66,9 @@ async def banking_manual_analysis(data: BankingInput):
 
     try:
 
-        transactions = [txn.dict() for txn in data.transactions]
+        transactions = [txn.model_dump() for txn in data.transactions]
 
-        result = analyze_banking(transactions)
+        result = analyze_transactions(transactions)
 
         return {
             "status": "success",
@@ -106,7 +106,7 @@ async def banking_file_analysis(file: UploadFile = File(...)):
                 detail="No transactions detected in file"
             )
 
-        result = analyze_banking(transactions)
+        result = analyze_transactions(transactions)
 
         return {
             "status": "success",

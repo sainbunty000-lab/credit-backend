@@ -31,9 +31,7 @@ def calculate_wc_logic(data):
         inputs.get("receivables") or inputs.get("sundry_debtors")
     )
 
-    payables = default_zero(
-        inputs.get("payables") or inputs.get("current_liabilities")
-    )
+    payables = default_zero(inputs.get("payables"))
 
     other_ca = default_zero(inputs.get("other_current_assets"))
     other_cl = default_zero(inputs.get("other_current_liabilities"))
@@ -110,7 +108,10 @@ def calculate_wc_logic(data):
     # =====================================================
 
     gca = inventory + receivables + other_ca
-    total_cl = payables + other_cl
+    # Use parser-provided CL total when available (same basis as `cl` above)
+    # so that MPBF and NWC/ratios are computed on a consistent CL figure.
+    # Fall back to component sum (payables + other_cl) when no total is available.
+    total_cl = default_zero(parser_cl) if parser_cl is not None else payables + other_cl
 
     wcg = gca - total_cl
 
