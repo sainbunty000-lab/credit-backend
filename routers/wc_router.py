@@ -63,6 +63,12 @@ async def wc_upload_dual(
     debug: bool = Form(default=False),
 ):
     try:
+        # Normalize unit_override:
+        # - "" -> None (Auto)
+        # - " auto " -> "auto" (handled by parser as auto)
+        # - "lakh"/"crore"/etc -> kept
+        unit_override = (unit_override or "").strip() or None
+
         validate_file(balance_sheet.filename)
         validate_file(profit_loss.filename)
 
@@ -144,6 +150,8 @@ async def wc_upload_single(
     debug: bool = Form(default=False),
 ):
     try:
+        unit_override = (unit_override or "").strip() or None
+
         validate_file(file.filename)
 
         file_bytes = await file.read()
@@ -210,4 +218,3 @@ async def wc_manual_calc(data: Dict):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Calculation error: {str(e)}")
-    
