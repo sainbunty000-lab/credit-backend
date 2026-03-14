@@ -24,9 +24,7 @@ def ocr_text_from_image_bytes(image_bytes: bytes) -> str:
     config = "--oem 3 --psm 6"
     return pytesseract.image_to_string(img, config=config)
 
-
 _AMOUNT_RE = re.compile(r"-?\d+(?:,\d{2})*(?:,\d{3})*(?:\.\d+)?")
-
 
 def extract_amounts_from_line(line: str) -> list[float]:
     """
@@ -47,22 +45,20 @@ def extract_amounts_from_line(line: str) -> list[float]:
 
 def extract_leftmost_amount_from_line(line: str):
     """
-    Extract the left-most *money amount* from a line (latest/left column),
-    skipping note numbers and years.
-
-    Uses raw token strings so we can:
-      - prefer tokens with decimals
-      - skip leading small integers (note numbers) when decimal tokens exist
+    Return the left-most *money amount* from a line, skipping:
+      - years (1900-2100)
+      - note numbers (small integers 1..99) when there is at least one decimal amount on the line
+    This is useful for statements with two year columns (2024, 2023) and note numbers.
     """
     s = str(line)
     s = re.sub(r"\(([^)]+)\)", r"-\1", s)
 
-    tokens = _AMOUNT_RE.findall(s)  # left-to-right, as strings
+    tokens = _AMOUNT_RE.findall(s)
     if not tokens:
         return None
 
-    # Remove years
-    cleaned = []
+    # convert + drop years
+    cleaned: list[tuple[str, float]] = []
     for t in tokens:
         try:
             v = float(t.replace(",", ""))
@@ -77,15 +73,14 @@ def extract_leftmost_amount_from_line(line: str):
 
     has_decimal_amount = any("." in t for t, _ in cleaned)
 
-    # If there are decimal amounts in the line, treat leading small integers as note numbers and skip them.
     if has_decimal_amount:
-        for t, v in cleaned:
+        # skip note numbers like 1,2,3... that appear before real amounts
+        for _t, v in cleaned:
             if v.is_integer() and 1 <= int(v) <= 99:
                 continue
-            # pick first non-note; ideally should have decimals but not required
             return v
 
-    # Otherwise, just skip small ints and return first remaining
+    # fallback: return first non-note integer/float
     for _t, v in cleaned:
         if v.is_integer() and 1 <= int(v) <= 99:
             continue
