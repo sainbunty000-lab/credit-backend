@@ -69,16 +69,23 @@ def _extract_number(s: str):
     matches = re.findall(r"-?\d+(?:,\d{3})*(?:\.\d+)?", s)
     if not matches:
         return None
-    m = matches[-1].replace(",", "")
-    try:
-        val = float(m)
-        # avoid treating year as value
-        if 1900 <= val <= 2100:
-            return None
-        return val
-    except Exception:
+
+    vals = []
+    for m in matches:
+        m2 = m.replace(",", "")
+        try:
+            v = float(m2)
+            if 1900 <= v <= 2100:
+                continue
+            vals.append(v)
+        except Exception:
+            continue
+
+    if not vals:
         return None
 
+    # pick the largest magnitude number from the cell (handles fragmented extraction)
+    return max(vals, key=lambda x: abs(x))
 
 def extract_numbers(values):
     out = []
