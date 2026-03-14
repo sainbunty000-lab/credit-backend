@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
-from typing import Dict
+from typing import Dict, Any, Tuple
 
 from services.wc_parser import parse_financial_file
 from services.wc_service import calculate_wc_logic
@@ -20,9 +20,34 @@ ALLOWED_TYPES = ["pdf", "xlsx", "xls", "csv", "jpg", "jpeg", "png"]
 
 
 def validate_file(filename: str):
-    ext = filename.split(".")[-1].lower()
+    ext = (filename or "").split(".")[-1].lower()
     if ext not in ALLOWED_TYPES:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
+
+
+# --------------------------------------------------
+# HELPERS
+# --------------------------------------------------
+
+def _safe_dict(v: Any) -> Dict:
+    return v if isinstance(v, dict) else {}
+
+
+def _merge_parsed(bs_data: Dict, pl_data: Dict) -> Tuple[Dict, Dict]:
+    """
+    Merge parsed outputs from parse_financial_file().
+    - inputs: PL values overwrite BS values on key collision (usually desired for P&L keys)
+    - calculations: merged similarly
+    """
+    bs_inputs = _safe_dict(bs_data.get("inputs"))
+    pl_inputs = _safe_dict(pl_data.get("inputs"))
+    merged_inputs = {**bs_inputs, **pl_inputs}
+
+    bs_calc = _safe_dict(bs_data.get("calculations"))
+    pl_calc = _safe_dict(pl_data.get("calculations"))
+    merged_calc = {**bs_calc, **pl_calc}
+
+    return merged_inputs, merged_calc
 
 
 # --------------------------------------------------
@@ -34,6 +59,7 @@ async def wc_upload_dual(
     balance_sheet: UploadFile = File(...),
     profit_loss: UploadFile = File(...),
     unit_override: str | None = Form(default=None),
+    # IMPORTANT: keep debug as a Form field so you can do -F debug=true in curl
     debug: bool = Form(default=False),
 ):
     try:
@@ -43,19 +69,29 @@ async def wc_upload_dual(
         bs_bytes = await balance_sheet.read()
         pl_bytes = await profit_loss.read()
 
-        # Parse both files
-        bs_data = parse_financial_file(bs_bytes, balance_sheet.filename, unit_override=unit_override, debug=debug)
-        pl_data = parse_financial_file(pl_bytes, profit_loss.filename, unit_override=unit_override, debug=debug)
+        # Parse both files (parser already supports unit_override + debug)
+        bs_data = parse_financial_file(
+            bs_bytes,
+            balance_sheet.filename,
+            unit_override=unit_override,
+            debug=debug,
+        )
+        pl_data = parse_financial_file(
+            pl_bytes,
+            profit_loss.filename,
+            unit_override=unit_override,
+            debug=debug,
+        )
 
-        # Merge inputs/calculations
-        merged_inputs = {**bs_data.get("inputs", {}), **pl_data.get("inputs", {})}
-        merged_calc = {**bs_data.get("calculations", {}), **pl_data.get("calculations", {})}
+        merged_inputs, merged_calc = _merge_parsed(bs_data, pl_data)
         merged_data = {"inputs": merged_inputs, "calculations": merged_calc}
 
         result = calculate_wc_logic(merged_data)
 
         # Missing keys (0 is allowed)
-        missing_fields, present_fields = find_missing_fields_present_only(merged_inputs, WC_REQUIRED_INPUT_FIELDS)
+        missing_fields, present_fields = find_missing_fields_present_only(
+            merged_inputs, WC_REQUIRED_INPUT_FIELDS
+        )
 
         resp = {
             "status": "success",
@@ -66,14 +102,29 @@ async def wc_upload_dual(
             "manual_template": {k: 0 for k in missing_fields},
         }
 
+        # Always return parse summary (even when debug=false) so we can diagnose "all 0" quickly
+        resp["parse_summary"] = {
+            "balance_sheet": {
+                "path_used": _safe_dict(bs_data.get("debug")).get("path_used"),
+                "extracted_keys_count": len(_safe_dict(bs_data.get("inputs"))),
+                "extracted_keys": sorted(list(_safe_dict(bs_data.get("inputs")).keys()))[:60],
+            },
+            "profit_loss": {
+                "path_used": _safe_dict(pl_data.get("debug")).get("path_used"),
+                "extracted_keys_count": len(_safe_dict(pl_data.get("inputs"))),
+                "extracted_keys": sorted(list(_safe_dict(pl_data.get("inputs")).keys()))[:60],
+            },
+            "merged": {
+                "extracted_keys_count": len(merged_inputs),
+                "extracted_keys": sorted(list(merged_inputs.keys()))[:120],
+            },
+        }
+
+        # If debug requested, include full parser debug blocks
         if debug:
             resp["debug"] = {
                 "balance_sheet": bs_data.get("debug", {}),
                 "profit_loss": pl_data.get("debug", {}),
-                "merged": {
-                    "extracted_keys_count": len(merged_inputs),
-                    "extracted_keys": sorted(list(merged_inputs.keys())),
-                },
             }
 
         return resp
@@ -97,11 +148,18 @@ async def wc_upload_single(
 
         file_bytes = await file.read()
 
-        parsed_data = parse_financial_file(file_bytes, file.filename, unit_override=unit_override, debug=debug)
+        parsed_data = parse_financial_file(
+            file_bytes,
+            file.filename,
+            unit_override=unit_override,
+            debug=debug,
+        )
         result = calculate_wc_logic(parsed_data)
 
-        inputs = parsed_data.get("inputs", {})
-        missing_fields, present_fields = find_missing_fields_present_only(inputs, WC_REQUIRED_INPUT_FIELDS)
+        inputs = _safe_dict(parsed_data.get("inputs"))
+        missing_fields, present_fields = find_missing_fields_present_only(
+            inputs, WC_REQUIRED_INPUT_FIELDS
+        )
 
         resp = {
             "status": "success",
@@ -110,6 +168,12 @@ async def wc_upload_single(
             "missing_fields_count": len(missing_fields),
             "present_fields": present_fields,
             "manual_template": {k: 0 for k in missing_fields},
+        }
+
+        resp["parse_summary"] = {
+            "path_used": _safe_dict(parsed_data.get("debug")).get("path_used"),
+            "extracted_keys_count": len(inputs),
+            "extracted_keys": sorted(list(inputs.keys()))[:120],
         }
 
         if debug:
@@ -131,7 +195,9 @@ async def wc_manual_calc(data: Dict):
         payload = {"inputs": data, "calculations": {}}
         result = calculate_wc_logic(payload)
 
-        missing_fields, present_fields = find_missing_fields_present_only(data, WC_REQUIRED_INPUT_FIELDS)
+        missing_fields, present_fields = find_missing_fields_present_only(
+            data, WC_REQUIRED_INPUT_FIELDS
+        )
 
         return {
             "status": "success",
@@ -144,3 +210,4 @@ async def wc_manual_calc(data: Dict):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Calculation error: {str(e)}")
+    
