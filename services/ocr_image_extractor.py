@@ -45,32 +45,53 @@ def extract_amounts_from_line(line: str) -> list[float]:
             continue
     return out
 
-
 def extract_leftmost_amount_from_line(line: str):
     """
-    Extract the left-most *amount* from a line, ignoring:
-      - likely note numbers (small integers like 1..100)
-      - years (1900..2100)
-    Useful for statements with two year columns where we want the latest (left) column.
+    Extract the left-most *money amount* from a line (latest/left column),
+    skipping note numbers and years.
+
+    Uses raw token strings so we can:
+      - prefer tokens with decimals
+      - skip leading small integers (note numbers) when decimal tokens exist
     """
-    vals = extract_amounts_from_line(line)
-    if not vals:
+    s = str(line)
+    s = re.sub(r"\(([^)]+)\)", r"-\1", s)
+
+    tokens = _AMOUNT_RE.findall(s)  # left-to-right, as strings
+    if not tokens:
         return None
 
-    filtered: list[float] = []
-    for v in vals:
-        if float(v).is_integer():
-            iv = int(v)
-            if iv <= 100:          # note number
-                continue
-            if 1900 <= iv <= 2100: # year token
-                continue
-        filtered.append(v)
+    # Remove years
+    cleaned = []
+    for t in tokens:
+        try:
+            v = float(t.replace(",", ""))
+        except Exception:
+            continue
+        if v.is_integer() and 1900 <= int(v) <= 2100:
+            continue
+        cleaned.append((t, v))
 
-    if not filtered:
+    if not cleaned:
         return None
-    return filtered[0]
 
+    has_decimal_amount = any("." in t for t, _ in cleaned)
+
+    # If there are decimal amounts in the line, treat leading small integers as note numbers and skip them.
+    if has_decimal_amount:
+        for t, v in cleaned:
+            if v.is_integer() and 1 <= int(v) <= 99:
+                continue
+            # pick first non-note; ideally should have decimals but not required
+            return v
+
+    # Otherwise, just skip small ints and return first remaining
+    for _t, v in cleaned:
+        if v.is_integer() and 1 <= int(v) <= 99:
+            continue
+        return v
+
+    return None
 
 def extract_amount_from_line(line: str):
     """
