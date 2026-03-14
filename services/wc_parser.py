@@ -71,7 +71,7 @@ def resolve_multiplier(detected_multiplier: int, unit_override: str | None) -> i
 # MAIN ENTRY
 # ==========================================================
 
-def parse_financial_file(file, filename, unit_override: str | None = None, debug: bool = False):
+def parse_financial_file(file, filename, unit_override: str | None = None, debug: bool = True):
 
     if isinstance(file, bytes):
         file_bytes = file
