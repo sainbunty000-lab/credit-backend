@@ -1,3 +1,4 @@
+cat > services/wc_required_fields.py <<'PY'
 WC_REQUIRED_INPUT_FIELDS = [
     "current_assets",
     "current_liabilities",
@@ -13,3 +14,4 @@ WC_REQUIRED_INPUT_FIELDS = [
     "depreciation",
     "tax",
 ]
+PY
