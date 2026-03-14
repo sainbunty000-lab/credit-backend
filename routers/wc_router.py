@@ -7,10 +7,7 @@ from services.wc_required_fields import WC_REQUIRED_INPUT_FIELDS
 from services.wc_missing import find_missing_fields_present_only
 
 
-wc_router = APIRouter(
-    prefix="/wc",
-    tags=["Working Capital Analysis"]
-)
+wc_router = APIRouter(prefix="/wc", tags=["Working Capital Analysis"])
 
 ALLOWED_TYPES = ["pdf", "xlsx", "xls", "csv", "jpg", "jpeg", "png"]
 
@@ -54,15 +51,12 @@ async def wc_upload_dual(
             "present_fields": present_fields,
             "manual_template": {k: 0 for k in missing_fields},
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
 
 
 @wc_router.post("/upload-single")
-async def wc_upload_single(
-    file: UploadFile = File(...),
-):
+async def wc_upload_single(file: UploadFile = File(...)):
     try:
         validate_file(file.filename)
 
@@ -83,7 +77,6 @@ async def wc_upload_single(
             "present_fields": present_fields,
             "manual_template": {k: 0 for k in missing_fields},
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
 
@@ -106,6 +99,5 @@ async def wc_manual_calc(data: Dict):
             "present_fields": present_fields,
             "manual_template": {k: 0 for k in missing_fields},
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Calculation error: {str(e)}")
