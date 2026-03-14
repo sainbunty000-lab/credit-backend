@@ -7,7 +7,11 @@ import pdfplumber
 
 from services.accounting_dictionary import ACCOUNTING_KEYWORDS, UNIT_SCALE_KEYWORDS
 from services.ocr_image_extractor import ocr_text_from_image_bytes, extract_amount_from_line
-
+from services.ocr_image_extractor import (
+    ocr_text_from_image_bytes,
+    extract_amount_from_line,
+    extract_leftmost_amount_from_line,
+)
 
 # ==========================================================
 # A) Unit detection (“In Thousands/Lakhs/Crores”) + multiply
@@ -309,7 +313,6 @@ def parse_csv(file_bytes: bytes) -> dict:
         df = pd.read_csv(BytesIO(file_bytes), header=None, encoding="latin-1").fillna("")
     return parse_financial_table(df, multiplier=1)
 
-
 def parse_image(file_bytes: bytes) -> dict:
     text = ocr_text_from_image_bytes(file_bytes)
     mult_used = resolve_multiplier(detect_multiplier(text))
@@ -317,9 +320,15 @@ def parse_image(file_bytes: bytes) -> dict:
     extracted = {}
     for line in text.splitlines():
         row_text = line.lower()
-        val = extract_amount_from_line(line)
+
+        # Prefer 2024 (left column) when lines contain two year columns.
+        val = extract_leftmost_amount_from_line(line)
+        if val is None:
+            # fallback to previous behavior
+            val = extract_amount_from_line(line)
         if val is None:
             continue
+
         val = val * mult_used
         if abs(val) < 1:
             continue
@@ -333,7 +342,6 @@ def parse_image(file_bytes: bytes) -> dict:
                     break
 
     return extracted
-
 
 # ==========================================================
 # Entry point
