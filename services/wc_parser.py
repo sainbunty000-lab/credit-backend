@@ -6,6 +6,7 @@ import pandas as pd
 import pdfplumber
 
 from services.accounting_dictionary import ACCOUNTING_KEYWORDS, UNIT_SCALE_KEYWORDS
+from services.ocr_image_extractor import ocr_text_from_image_bytes, extract_amount_from_line
 
 
 # ==========================================================
@@ -64,6 +65,10 @@ def fuzzy_match(keyword: str, text: str, threshold: float = 0.82) -> bool:
 
 
 def _extract_number(s: str):
+    """
+    Extract numeric value from a cell.
+    IMPORTANT: picks the largest-magnitude token to avoid pdfplumber fragmentation.
+    """
     s = str(s)
     s = re.sub(r"\(([^)]+)\)", r"-\1", s)  # (123) => -123
     matches = re.findall(r"-?\d+(?:,\d{3})*(?:\.\d+)?", s)
@@ -84,8 +89,8 @@ def _extract_number(s: str):
     if not vals:
         return None
 
-    # pick the largest magnitude number from the cell (handles fragmented extraction)
     return max(vals, key=lambda x: abs(x))
+
 
 def extract_numbers(values):
     out = []
@@ -102,7 +107,7 @@ def pick_latest_value(numbers):
 
 
 # ==========================================================
-# B) Proper table extraction = pick value under latest year column
+# B) Proper table extraction = pick value under latest year col
 # ==========================================================
 
 def _is_year_token(s: str) -> bool:
@@ -166,7 +171,7 @@ def parse_financial_table(df: pd.DataFrame, multiplier: int) -> dict:
 
         value = _pick_value_from_row_by_year_col(row_values, latest_year_col)
 
-        # fallback: right-most number in row (common when header row not detected)
+        # fallback: right-most number in row
         if value is None:
             numbers = extract_numbers(row_values)
             if not numbers:
@@ -175,7 +180,6 @@ def parse_financial_table(df: pd.DataFrame, multiplier: int) -> dict:
 
         value = value * multiplier
 
-        # don't drop small values
         if abs(value) < 1:
             continue
 
@@ -191,7 +195,7 @@ def parse_financial_table(df: pd.DataFrame, multiplier: int) -> dict:
 
 
 # ==========================================================
-# C) Mapping + computed totals
+# C) Computed totals (current assets/liabilities)
 # ==========================================================
 
 def _sum_present(inputs: dict, keys: list[str]) -> float:
@@ -210,10 +214,6 @@ def _sum_present(inputs: dict, keys: list[str]) -> float:
 
 
 def normalize_wc_inputs(inputs: dict) -> dict:
-    """
-    If current_assets/current_liabilities are not explicitly present,
-    compute them from available components.
-    """
     inputs = dict(inputs or {})
 
     if not inputs.get("current_assets"):
@@ -241,7 +241,7 @@ def normalize_wc_inputs(inputs: dict) -> dict:
 
 
 # ==========================================================
-# Format parsers
+# Parsers
 # ==========================================================
 
 def parse_pdf_tables(file_bytes: bytes) -> dict:
@@ -262,21 +262,19 @@ def parse_pdf_tables(file_bytes: bytes) -> dict:
 
 
 def parse_pdf_text(file_bytes: bytes) -> dict:
-    """
-    Fallback when no tables extracted: scan lines.
-    """
     with pdfplumber.open(BytesIO(file_bytes)) as pdf:
         all_text = "\n".join([(p.extract_text() or "") for p in pdf.pages])
+
     mult_used = resolve_multiplier(detect_multiplier(all_text))
 
     result = {}
     for line in all_text.splitlines():
         row_text = line.lower()
-        n = _extract_number(line)
-        if n is None:
+        val = _extract_number(line)
+        if val is None:
             continue
-        value = n * mult_used
-        if abs(value) < 1:
+        val = val * mult_used
+        if abs(val) < 1:
             continue
 
         for key, keywords in ACCOUNTING_KEYWORDS.items():
@@ -284,7 +282,7 @@ def parse_pdf_text(file_bytes: bytes) -> dict:
                 continue
             for kw in keywords:
                 if kw in row_text or fuzzy_match(kw, row_text):
-                    result[key] = value
+                    result[key] = val
                     break
     return result
 
@@ -312,6 +310,31 @@ def parse_csv(file_bytes: bytes) -> dict:
     return parse_financial_table(df, multiplier=1)
 
 
+def parse_image(file_bytes: bytes) -> dict:
+    text = ocr_text_from_image_bytes(file_bytes)
+    mult_used = resolve_multiplier(detect_multiplier(text))
+
+    extracted = {}
+    for line in text.splitlines():
+        row_text = line.lower()
+        val = extract_amount_from_line(line)
+        if val is None:
+            continue
+        val = val * mult_used
+        if abs(val) < 1:
+            continue
+
+        for key, keywords in ACCOUNTING_KEYWORDS.items():
+            if key in extracted:
+                continue
+            for kw in keywords:
+                if kw in row_text or fuzzy_match(kw, row_text):
+                    extracted[key] = val
+                    break
+
+    return extracted
+
+
 # ==========================================================
 # Entry point
 # ==========================================================
@@ -335,9 +358,8 @@ def parse_financial_file(file, filename):
     elif filename_lower.endswith(".csv"):
         extracted = parse_csv(file_bytes)
 
-    # NOTE: images not supported in this repo yet (no OCR module present)
     elif filename_lower.endswith(".jpg") or filename_lower.endswith(".jpeg") or filename_lower.endswith(".png"):
-        extracted = {}
+        extracted = parse_image(file_bytes)
 
     else:
         extracted = {}
@@ -397,3 +419,4 @@ def calculate_financial_metrics(data):
         "debt_equity": debt_equity,
         "net_margin": net_margin,
     }
+PY
