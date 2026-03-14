@@ -12,10 +12,6 @@ wc_router = APIRouter(
     tags=["Working Capital Analysis"]
 )
 
-# --------------------------------------------------
-# FILE TYPE VALIDATION
-# --------------------------------------------------
-
 ALLOWED_TYPES = ["pdf", "xlsx", "xls", "csv", "jpg", "jpeg", "png"]
 
 
@@ -25,20 +21,11 @@ def validate_file(filename: str):
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
 
 
-# --------------------------------------------------
-# DUAL FILE UPLOAD (Balance Sheet + P&L)
-# --------------------------------------------------
-
 @wc_router.post("/upload-dual")
 async def wc_upload_dual(
     balance_sheet: UploadFile = File(...),
     profit_loss: UploadFile = File(...),
 ):
-    """
-    Upload Balance Sheet + P&L and return WC analysis.
-    - Unit is auto-detected from the document when possible; otherwise defaults to 1.
-    - No debug output and no manual unit override on this endpoint.
-    """
     try:
         validate_file(balance_sheet.filename)
         validate_file(profit_loss.filename)
@@ -46,8 +33,8 @@ async def wc_upload_dual(
         bs_bytes = await balance_sheet.read()
         pl_bytes = await profit_loss.read()
 
-        bs_data = parse_financial_file(bs_bytes, balance_sheet.filename, unit_override=None, debug=False)
-        pl_data = parse_financial_file(pl_bytes, profit_loss.filename, unit_override=None, debug=False)
+        bs_data = parse_financial_file(bs_bytes, balance_sheet.filename)
+        pl_data = parse_financial_file(pl_bytes, profit_loss.filename)
 
         merged_inputs = {**(bs_data.get("inputs", {}) or {}), **(pl_data.get("inputs", {}) or {})}
         merged_calc = {**(bs_data.get("calculations", {}) or {}), **(pl_data.get("calculations", {}) or {})}
@@ -72,25 +59,15 @@ async def wc_upload_dual(
         raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
 
 
-# --------------------------------------------------
-# SINGLE FILE UPLOAD
-# --------------------------------------------------
-
 @wc_router.post("/upload-single")
 async def wc_upload_single(
     file: UploadFile = File(...),
 ):
-    """
-    Upload a single file and return WC analysis.
-    - Unit is auto-detected from the document when possible; otherwise defaults to 1.
-    - No debug output and no manual unit override on this endpoint.
-    """
     try:
         validate_file(file.filename)
 
         file_bytes = await file.read()
-
-        parsed_data = parse_financial_file(file_bytes, file.filename, unit_override=None, debug=False)
+        parsed_data = parse_financial_file(file_bytes, file.filename)
         result = calculate_wc_logic(parsed_data)
 
         inputs = parsed_data.get("inputs", {}) or {}
@@ -111,15 +88,8 @@ async def wc_upload_single(
         raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
 
 
-# --------------------------------------------------
-# MANUAL CALCULATION
-# --------------------------------------------------
-
 @wc_router.post("/manual-calc")
 async def wc_manual_calc(data: Dict):
-    """
-    Manual WC calculation from JSON body.
-    """
     try:
         payload = {"inputs": data, "calculations": {}}
         result = calculate_wc_logic(payload)
